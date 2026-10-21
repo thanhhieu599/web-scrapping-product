@@ -132,6 +132,27 @@ c = d.get("content", "")
 check(c.count("<img") >= 4 and "/media/catalog/product/4/8/48-22-8424-hero01.png" in c and "/img/p5.jpg" in c,
       "Mô tả có ảnh: hàng ảnh trong bảng Thông số + ảnh trong Đặc điểm")
 
+# Sản phẩm 1 MODEL (vd 48-22-8420): bảng thông số 1 cột + ảnh thật (không lấy ảnh chờ / nút chat)
+print("\n=== SẢN PHẨM 1 MODEL ===")
+saved.clear()
+pipeline.run([f"{base}/san-pham/mot-model-8420.html", f"{base}/san-pham/mot-model-chung.html"], dict(opts, force=True), cfg)
+one = json.loads((tmp / "out" / "48-22-8420" / "product.json").read_text(encoding="utf-8"))
+check(one["spec"]["headers"] == ["48-22-8420"], f"1 model: đúng 1 cột model ({one['spec']['headers']})")
+rws = {r.get("label"): r.get("values") for r in one["spec"]["rows"] if "label" in r}
+check(rws.get("Chiều dài (mm)") == ["610"] and rws.get("Khả năng chịu trọng lượng (kg)") == ["113"],
+      f"1 model: giá trị nằm đúng cột ({rws.get('Chiều dài (mm)')})")
+check(one["spec"]["images"] == [one["spec"]["images"][0]] and bool(one["spec"]["images"][0]), "1 model: ảnh trên đúng cột model")
+check(not any("(1)" in str(r) for r in one["spec"]["rows"]), "1 model: bỏ dòng '48-22-8420 (1)'")
+sizes = [Image.open(f).size for f in one["image_files"]]
+check(len(sizes) == 2 and all(sz == (1200, 900) for sz in sizes), f"1 model Magento: lấy 2 ảnh thật gốc từ gallery ({sizes})")
+d1 = next((x for x in saved if x.get("sku") == "48-22-8420"), {})
+check(len(d1.get("files", [])) == 2, f"1 model Magento → Sapo: tải lên 2 ảnh, không có ảnh chờ/nút chat ({d1.get('files')})")
+html1 = (tmp / "out" / "48-22-8420" / "noi_dung.html").read_text(encoding="utf-8")
+check(html1.count("<th style") == 2, "1 model: bảng nội dung có đúng 2 cột (Thông số | 48-22-8420)")
+gen = json.loads((tmp / "out" / "48-22-8099" / "product.json").read_text(encoding="utf-8"))
+gsz = [Image.open(f).size for f in gen["image_files"]]
+check(gsz == [(800, 600)], f"1 model web thường: chỉ lấy ảnh sản phẩm thật, bỏ ảnh chờ/nút chat/ảnh nhỏ ({gsz})")
+
 # Trang DANH MỤC kiểu Magento (như milwaukeetool.com.vn/jobsite-enhancement/storage): 2 trang, thẻ SP có mã + giá
 print("\n=== TRANG DANH MỤC → TỰ KÉO HẾT SẢN PHẨM ===")
 res = pipeline.run([f"{base}/san-pham/luu-tru.html"], dict(opts, dry_run=True, force=True), cfg)

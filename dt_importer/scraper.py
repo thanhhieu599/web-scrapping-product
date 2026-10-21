@@ -5,6 +5,7 @@ Không phụ thuộc class CSS của trang nguồn: dùng "chữ neo" hiển th�
 Nếu trang nguồn đổi giao diện, có thể chỉ định CSS selector trong config.json
 (mục "source_selectors") để ghi đè.
 """
+import hashlib
 import io
 import re
 import time
@@ -174,16 +175,41 @@ SCRAPE_JS = COMMON_JS + r"""
   }
 
   // Ảnh gallery (cột ảnh bên trái)
+  // 1) Magento: danh sách ẢNH THẬT nằm trong cấu hình "mage/gallery/gallery" (ảnh <img> ban đầu chỉ là ảnh chờ)
   let galleryImages = [];
-  if (info) {
+  const findGallery = (o, d) => { if (!o || typeof o !== 'object' || d > 8) return null;
+    if (o['mage/gallery/gallery'] && Array.isArray(o['mage/gallery/gallery'].data)) return o['mage/gallery/gallery'].data;
+    for (const k in o) { const r = findGallery(o[k], d + 1); if (r) return r; } return null; };
+  for (const sc of document.querySelectorAll('script[type="text/x-magento-init"]')) {
+    let data = null;
+    try { data = findGallery(JSON.parse(sc.textContent), 0); } catch (e) {}
+    if (data && data.length) {
+      galleryImages = [...data].filter(x => !x.type || x.type === 'image')
+        .sort((a, b) => (b.isMain ? 1 : 0) - (a.isMain ? 1 : 0) || (+a.position || 0) - (+b.position || 0))
+        .map(x => abs(x.full || x.img || x.thumb)).filter(Boolean);
+      break;
+    }
+  }
+  // 2) Trang khác: ảnh quanh khối thông tin, LOẠI ảnh rác (nút chat nổi, logo, icon, ảnh chờ, ảnh quá nhỏ)
+  const JUNK = /chat|messenger|zalo|facebook|fb[-_]|hotline|phone|logo|icon|heart|wish|badge|banner|placeholder|loading|spinner|lazy[-_]?load|blank|pixel|sprite|rating|star/i;
+  const isFloating = el => { for (let n = el; n && n !== document.body; n = n.parentElement) {
+      const pos = getComputedStyle(n).position; if (pos === 'fixed' || pos === 'sticky') return true; } return false; };
+  const okImg = i => {
+    const tag = (i.className || '') + ' ' + (i.getAttribute('src') || '') + ' ' + (i.getAttribute('alt') || '') + ' '
+              + ((i.closest('[class]') || {}).className || '');
+    if (JUNK.test(tag) || isFloating(i) || i.closest('header, footer, nav, .modal, [role=dialog]')) return false;
+    const w = Math.max(i.naturalWidth || 0, i.width || 0), h = Math.max(i.naturalHeight || 0, i.height || 0);
+    return !(w && h && (w < 40 || h < 40));
+  };
+  if (!galleryImages.length) {
+    const box = qs('.product.media, .product-media, .product-gallery, .woocommerce-product-gallery, [class*=product-image], [class*=gallery]');
+    if (box && !(info && box.contains(info))) galleryImages = [...box.querySelectorAll('img')].filter(okImg).map(bestSrc).filter(Boolean);
+  }
+  if (!galleryImages.length && info) {
     let n = info.parentElement;
     while (n && n !== document.body) {
       const imgs = [...n.querySelectorAll('img')].filter(i => !info.contains(i));
-      if (imgs.length) {
-        galleryImages = imgs.filter(i => !/icon|logo|heart|wish/i.test((i.className || '') + (i.getAttribute('src') || '')))
-                            .map(bestSrc).filter(Boolean);
-        break;
-      }
+      if (imgs.length) { galleryImages = imgs.filter(okImg).map(bestSrc).filter(Boolean); break; }
       n = n.parentElement;
     }
   }
@@ -250,7 +276,7 @@ SCRAPE_JS = COMMON_JS + r"""
       const r = document.createRange(); r.selectNodeContents(tn);
       const b = r.getBoundingClientRect();
       if (b.width < 1 || b.height < 1) continue;
-      pieces.push({ t, l: b.left, r: b.right, top: b.top, bot: b.bottom });
+      pieces.push({ t, el: tn.parentElement, l: b.left, r: b.right, top: b.top, bot: b.bottom });
     }
     // ảnh trong bảng (vd hàng ảnh sản phẩm phía trên các cột model)
     for (const img of root.querySelectorAll('img')) {
@@ -258,7 +284,31 @@ SCRAPE_JS = COMMON_JS + r"""
       if (b.width < 2 || b.height < 2) { const p = img.parentElement; if (p) b = p.getBoundingClientRect(); }
       const u = bestSrc(img);
       if (!u || b.width < 2 || b.height < 2) continue;
-      pieces.push({ t: '', img: u, l: b.left, r: b.right, top: b.top, bot: b.bottom });
+      pieces.push({ t: '', img: u, el: img, l: b.left, r: b.right, top: b.top, bot: b.bottom });
+    }
+    // KHUNG Ô của mỗi mảnh: phần tử rộng nhất bao quanh nó mà KHÔNG chứa mảnh nào khác cùng hàng.
+    // Dùng khung ô (thay vì vị trí chữ) để xác định cột → đúng cả khi chữ căn trái còn mã/ảnh căn giữa.
+    const sameRow = (a, b) => a.top < b.bot - 1 && b.top < a.bot - 1;
+    // e là 1 ô nếu bên cạnh nó (cùng hàng, khác vị trí ngang) có phần tử anh em – kể cả ô trống
+    const hasSideSibling = (par, e) => {
+      const b = e.getBoundingClientRect();
+      return [...par.children].some(c => {
+        if (c === e) return false;
+        const r = c.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && r.top < b.bottom - 1 && b.top < r.bottom - 1
+               && (r.right <= b.left + 1 || r.left >= b.right - 1);
+      });
+    };
+    for (const p of pieces) {
+      let e = p.el;
+      while (e && e !== root && e.parentElement) {
+        const par = e.parentElement;
+        if (pieces.some(q => q !== p && sameRow(p, q) && par.contains(q.el) && !e.contains(q.el))) break;
+        if (hasSideSibling(par, e)) break;
+        e = par;
+      }
+      const bb = (e || p.el).getBoundingClientRect();
+      p.cl = Math.min(bb.left, p.l); p.cr = Math.max(bb.right, p.r);
     }
     restore.forEach(([n, css]) => { n.style.cssText = css; });
     if (pieces.filter(p => p.t).length < 4) return null;
@@ -269,6 +319,7 @@ SCRAPE_JS = COMMON_JS + r"""
       const last = cells[cells.length - 1];
       if (last && p.t && last.t && Math.abs(last.top - p.top) < 4 && p.l - last.r < 8 && p.l >= last.l) {
         last.t += ' ' + p.t; last.r = Math.max(last.r, p.r); last.bot = Math.max(last.bot, p.bot);
+        last.cl = Math.min(last.cl, p.cl); last.cr = Math.max(last.cr, p.cr);
       } else cells.push({ ...p });
     }
     // hàng: các ô có tâm dọc nằm trong cùng dải
@@ -278,24 +329,31 @@ SCRAPE_JS = COMMON_JS + r"""
       if (row && mid < row.bot) { row.cells.push(c); row.bot = Math.max(row.bot, c.bot); }
       else rows.push({ top: c.top, bot: c.bot, cells: [c] });
     }
-    // cột: gộp khoảng ngang của các ô (bỏ ô quá rộng như tiêu đề nhóm)
+    // cột: gộp khoảng ngang của các KHUNG Ô (bỏ ô trải gần hết bề ngang như tiêu đề nhóm).
+    // Không tách được ≥2 cột theo khung ô (trang không có ô rõ ràng) → dùng vị trí chữ như cũ.
     const width = root.getBoundingClientRect().width || 1000;
-    const iv = cells.filter(c => (c.r - c.l) < width * 0.45).map(c => [c.l, c.r]).sort((a, b) => a[0] - b[0]);
-    const bands = [];
-    for (const [l, r] of iv) {
-      const b = bands[bands.length - 1];
-      if (b && l <= b[1] + 2) b[1] = Math.max(b[1], r); else bands.push([l, r]);
-    }
+    const makeBands = (L, R, maxFrac) => {
+      const iv = cells.filter(c => (c[R] - c[L]) < width * maxFrac).map(c => [c[L], c[R]]).sort((a, b) => a[0] - b[0]);
+      const out = [];
+      for (const [l, r] of iv) {
+        const b = out[out.length - 1];
+        if (b && l < b[1] - 1) b[1] = Math.max(b[1], r); else out.push([l, r]);
+      }
+      return out;
+    };
+    let L = 'cl', R = 'cr', wideFrac = 0.9;
+    let bands = makeBands(L, R, wideFrac);
+    if (bands.length < 2) { L = 'l'; R = 'r'; wideFrac = 0.45; bands = makeBands(L, R, wideFrac); }
     if (bands.length < 2) return null;
     const bandOf = c => {
-      const mid = (c.l + c.r) / 2;
+      const mid = (c[L] + c[R]) / 2;
       let best = 0, d = Infinity;
       bands.forEach(([l, r], i) => { const dist = mid < l ? l - mid : mid > r ? mid - r : 0; if (dist < d) { d = dist; best = i; } });
       return best;
     };
     return rows.map(row => {
       const out = { t: Array(bands.length).fill(''), im: Array(bands.length).fill('') };
-      const wide = row.cells.length === 1 && row.cells[0].t && (row.cells[0].r - row.cells[0].l) >= width * 0.45;
+      const wide = row.cells.length === 1 && row.cells[0].t && (row.cells[0][R] - row.cells[0][L]) >= width * wideFrac;
       if (wide) { out.t[0] = row.cells[0].t; return out; }
       row.cells.sort((a, b) => a.l - b.l).forEach(c => {
         const i = bandOf(c);
@@ -482,6 +540,7 @@ class Scraper:
         self.ctx = browser.new_context(viewport={"width": 1366, "height": 900}, locale="vi-VN", user_agent=ua)
         self.page = self.ctx.new_page()
         self.img_page = None
+        self.last_fetch_url = None
 
     def close(self):
         self.ctx.close()
@@ -628,6 +687,7 @@ class Scraper:
                     self.img_page = self.ctx.new_page()
                 resp = self.img_page.goto(url, wait_until="load", timeout=45000)
                 if resp and resp.ok:
+                    self.last_fetch_url = resp.url
                     return resp.body()
                 last = f"HTTP {resp.status if resp else '?'}"
                 if resp and resp.status in (403, 404, 410):
@@ -640,6 +700,7 @@ class Scraper:
         try:
             r = self.ctx.request.get(url, timeout=30000, headers={"Referer": self.page.url})
             if r.ok:
+                self.last_fetch_url = r.url
                 return r.body()
             last = f"HTTP {r.status}"
         except Exception as e:
@@ -652,13 +713,27 @@ class Scraper:
         folder.mkdir(parents=True, exist_ok=True)
         strip = [s.lower() for s in self.cfg.get("image_url_strip_params", [])]
         max_side = int(self.cfg.get("image_max_side", 2000))
-        files = []
+        files, seen = [], set()
         for i, u in enumerate(urls[:max_images], 1):
             errs = []
             for cand in dict.fromkeys([upgrade_image_url(u, strip), u]):
                 try:
-                    img = Image.open(io.BytesIO(self._fetch_bytes(cand)))
+                    self.last_fetch_url = cand
+                    raw = self._fetch_bytes(cand)
+                    # loại ảnh rác: ảnh chờ (placeholder), ảnh quá nhỏ, ảnh một màu, ảnh trùng trong cùng SP
+                    if "placeholder" in (self.last_fetch_url or "").lower():
+                        raise ValueError("web trả về ảnh chờ (placeholder) thay vì ảnh thật")
+                    digest = hashlib.md5(raw).hexdigest()
+                    if digest in seen:
+                        raise ValueError("trùng ảnh đã lấy")
+                    img = Image.open(io.BytesIO(raw))
                     img.load()
+                    if min(img.size) < 100:
+                        raise ValueError(f"ảnh quá nhỏ {img.size[0]}x{img.size[1]}px (icon/nút)")
+                    lo, hi = img.convert("L").getextrema()
+                    if hi - lo < 8:
+                        raise ValueError("ảnh trống một màu")
+                    seen.add(digest)
                     if img.mode not in ("RGB", "L"):
                         rgba = img.convert("RGBA")
                         bg = Image.new("RGB", img.size, (255, 255, 255))
@@ -691,8 +766,8 @@ def pick_images(data, mode):
         imgs = g or v
     elif mode == "both":
         imgs = v + [x for x in g if x not in v]
-    else:  # quycach
-        imgs = v or g
+    else:  # quycach (chỉ 1 ô quy cách = SP 1 model → dùng ảnh gallery thật nếu có)
+        imgs = v if len(v) >= 2 or not g else g
     return list(dict.fromkeys(imgs))
 
 
