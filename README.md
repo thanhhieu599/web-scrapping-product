@@ -13,13 +13,15 @@ Chỉ cần dán **link trang nguồn** (trang 1 sản phẩm hoặc cả trang 
 
 | Trang nguồn (nhà cung cấp) | → | Form "Thêm mới sản phẩm" trên Sapo |
 |---|---|---|
-| Tên sản phẩm (tiêu đề cạnh giá, không lấy banner viết hoa) | → | **Tên sản phẩm** |
+| Tên sản phẩm (tiêu đề cạnh giá, không lấy banner viết hoa) + **chèn tên Nhà cung cấp**: tên có mã SP → chèn ngay trước mã (`Hộp đựng dụng cụ 8450, 8424` → `Hộp đựng dụng cụ Milwaukee 8450, 8424`); tên không có mã → thêm vào cuối. Tắt được bằng ô "Chèn nhà cung cấp vào tên" | → | **Tên sản phẩm** |
 | Mã sản phẩm – chuỗi nhỏ dưới tên (vd `48-22-8450`) | → | **Mã sản phẩm / SKU** |
 | Giá (vd `2.940.000 ₫` → `2940000`) | → | **Giá** + tự tick **"Giá đã bao gồm VAT"** |
 | Các ảnh dưới chữ **QUY CÁCH** (tải ảnh gốc, đổi sang JPG) | → | **Ảnh sản phẩm** |
 | Mục **Đặc điểm** (danh sách gạch đầu dòng) | → | **Nội dung** – phần "Đặc điểm nổi bật" |
 | Mục **Thông Số** – giữ nguyên dạng **bảng** như trang gốc (đủ hàng, cột model, dòng tiêu đề nhóm). Trang dùng bảng HTML hay xếp lưới bằng `div` (như Milwaukee/Magento) đều dựng lại được thành bảng | → | **Nội dung** – bảng "Thông số kỹ thuật" có kẻ khung, tô màu xen kẽ |
 | Trọng lượng (kg) đúng cột của mã sản phẩm | → | **Khối lượng** (gram, để tính phí ship) |
+| Các ô dưới **QUY CÁCH** (mỗi ô = 1 phiên bản: mã SP, giá, ảnh riêng) – chỉ khi bạn nhập **"Tên thuộc tính phiên bản"** (vd `Model`) | → | **Thuộc tính**: tên = ô bạn nhập, giá trị = mã SP từng phiên bản; mỗi dòng phiên bản được đặt **giá, SKU** và **gán đúng ảnh** |
+| Ảnh nằm trong phần mô tả (vd hàng ảnh sản phẩm phía trên bảng Thông số, ảnh minh hoạ trong Đặc điểm) | → | Giữ trong **Nội dung**, đúng vị trí như trang gốc (dùng link ảnh gốc của nhà cung cấp) |
 | Bạn nhập: Loại sản phẩm | → | **Loại** |
 | Bạn nhập: Nhà cung cấp | → | **Nhà cung cấp** |
 | Bạn nhập (tuỳ chọn): Danh mục, Tags | → | **Danh mục**, **Tags** |
@@ -99,6 +101,8 @@ python main.py --url "https://web-ncc/danh-muc/luu-tru" --loai "Hộp đựng d�
 # Nhiều link trong file (xem urls_mau.txt)
 python main.py --file urls.txt --loai "Găng tay" --ncc "TOWA"
 
+python main.py --url ... --thuoc-tinh "Model"   # tạo phiên bản từ các ô Quy cách
+python main.py --url ... --khong-chen-ncc       # không chèn nhà cung cấp vào tên
 python main.py --url ... --dry-run   # chỉ cào, không đăng
 python main.py --url ... --no-save   # điền form nhưng không bấm Lưu
 python main.py --url ... --force     # đăng lại mã đã đăng
@@ -106,6 +110,14 @@ python main.py --login               # chỉ đăng nhập Sapo
 ```
 
 ---
+
+### Phiên bản (thuộc tính) – lưu ý
+- Nhập **Tên thuộc tính phiên bản** (vd `Model`, `Kích thước`) → ứng dụng bấm lần lượt từng ô dưới QUY CÁCH
+  trên trang nguồn để đọc **mã SP, giá, ảnh** của từng phiên bản (web Magento như Milwaukee còn đọc thẳng dữ liệu cấu hình).
+- Ảnh sản phẩm được tải lên **theo đúng thứ tự phiên bản**, rồi phiên bản thứ *n* được gán ảnh thứ *n*.
+- Nếu Sapo đổi giao diện và ứng dụng **không đặt được** giá/SKU/ảnh của phiên bản nào, ứng dụng **không tự bấm Lưu**:
+  nó dừng lại để bạn hoàn tất bằng tay, và lưu form vào `output/logs/sapo-form-*.html` – gửi file này để chỉnh công cụ.
+- Để trống ô Tên thuộc tính → đăng sản phẩm đơn như trước.
 
 ## 4. Kết quả lưu ở đâu
 

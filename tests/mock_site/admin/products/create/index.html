@@ -13,6 +13,14 @@
 <div class="card"><h3>Kho hàng</h3><div><label>Mã sản phẩm / SKU</label><input id="sku"></div><div><label>Mã vạch / Barcode (ISBN, UPC, v.v...)</label><input id="barcode"></div></div>
 <div class="card"><h3>Vận chuyển</h3><label class="chk"><input type="checkbox" id="ship"><span class="box"></span> Sản phẩm yêu cầu vận chuyển</label>
  <div><span>KHỐI LƯỢNG</span><p>Được dùng để tính phí vận chuyển ở trang thanh toán</p><input id="weight" value="0"><select><option>g</option></select></div></div>
+<div class="card" id="attrcard"><h3>Thuộc tính</h3><a href="#" id="addattr">Thêm thuộc tính</a>
+ <p>Thêm mới thuộc tính giúp sản phẩm có nhiều lựa chọn, như kích cỡ hay màu sắc.</p>
+ <div id="attrform" style="display:none"><div style="display:flex;gap:20px"><div><div>Tên thuộc tính</div></div><div><div>Giá trị</div></div></div>
+  <div style="display:flex;gap:20px"><input id="attrname"><div><span id="chips"></span><input id="attrval" placeholder="Nhập giá trị thuộc tính"></div></div>
+  <button type="button">Thêm thuộc tính khác</button></div>
+ <table id="vt" style="display:none"><thead><tr><th></th><th></th><th id="vth">Model</th><th>Số lượng</th><th>Giá</th><th>SKU</th><th></th></tr></thead><tbody></tbody></table>
+</div>
+<div class="modal" id="m" style="display:none;position:fixed;top:50px;left:200px;background:#fff;border:2px solid #333;padding:20px;z-index:9"><div class="modal-content" id="mc"></div></div>
 <div class="card"><h3>Phân loại</h3><div>Loại</div><input id="type" placeholder="Nhập loại sản phẩm">
  <ul id="dd"><li>Găng tay</li><li>Hộp đựng dụng cụ</li></ul>
  <div>Nhà cung cấp</div><input id="vendor" placeholder="Nhập nhà cung cấp">
@@ -28,7 +36,22 @@ const chosen=new Set();document.addEventListener('change',e=>{if(e.target.classL
 const tags=[];$('tagq').addEventListener('keydown',e=>{if(e.key==='Enter'){tags.push(e.target.value);e.target.value='';$('tags').textContent=tags.join(',')}});
 let files=[];$('imgs').addEventListener('change',e=>{files=files.concat([...e.target.files].map(f=>f.name));$('thumbs').textContent=files.join(',')});
 document.querySelector('.fr-element').addEventListener('input',e=>{$('content').value=e.target.innerHTML});
+
+const V=[];let urls=[];
+$('imgs').addEventListener('change',e=>{urls=urls.concat([...e.target.files].map(f=>URL.createObjectURL(f)))});
+$('addattr').onclick=e=>{e.preventDefault();$('attrform').style.display='block'};
+$('attrval').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const v=e.target.value.trim();if(!v)return;e.target.value='';
+  V.push({value:v,price:$('price').value,sku:$('sku').value+'-'+(V.length+1),image:null});render();}});
+function render(){$('chips').textContent=V.map(v=>v.value).join(' ');$('vt').style.display='table';$('vth').textContent=$('attrname').value||'Thuộc tính';
+ const tb=$('vt').querySelector('tbody');tb.innerHTML='';
+ V.forEach((v,i)=>{const tr=document.createElement('tr');tr.innerHTML=`<td><input type=checkbox></td><td><div class="variant-image" style="width:40px;height:40px;border:1px solid #ccc">${v.image!==null?'<img style="width:38px" src="'+urls[v.image]+'">':'□'}</div></td><td>${v.value}</td><td>1</td><td>${v.price}</td><td>${v.sku}</td><td><button type=button class=edit>Sửa</button></td>`;
+  tr.querySelector('.edit').onclick=()=>openEdit(i);tr.querySelector('.variant-image').onclick=()=>openImg(i);tb.appendChild(tr);});}
+function openEdit(i){$('mc').innerHTML=`<h4>Sửa phiên bản</h4><div><label>Giá</label><input id=mp value="${V[i].price}"></div><div><label>Mã sản phẩm / SKU</label><input id=ms value="${V[i].sku}"></div><button type=button id=mok>Lưu</button> <button type=button id=mx>Hủy</button>`;
+ $('m').style.display='block';$('mok').onclick=()=>{V[i].price=$('mp').value;V[i].sku=$('ms').value;$('m').style.display='none';render()};$('mx').onclick=()=>{$('m').style.display='none'}}
+function openImg(i){let sel=null;$('mc').innerHTML='<h4>Chọn ảnh phiên bản</h4><div id=th></div><button type=button id=iok>Xong</button>';
+ urls.forEach((u,k)=>{const im=document.createElement('img');im.src=u;im.style.width='60px';im.onclick=()=>{sel=k;im.style.outline='2px solid red'};$('th').appendChild(im)});
+ $('m').style.display='block';$('iok').onclick=()=>{if(sel!==null)V[i].image=sel;$('m').style.display='none';render()}}
 $('save').onclick=()=>{const d={name:$('name').value,content:$('content').value,files,price:$('price').value,vat:$('vat').checked,sku:$('sku').value,
- ship:$('ship').checked,weight:$('weight').value,type:$('type').value,vendor:$('vendor').value,cols:[...chosen],tags};
+ ship:$('ship').checked,weight:$('weight').value,type:$('type').value,vendor:$('vendor').value,cols:[...chosen],tags,attr:$('attrname').value,variants:V.map(v=>({value:v.value,price:v.price,sku:v.sku,image:v.image}))};
  sessionStorage.setItem('saved',JSON.stringify(d));location.href='/admin/products/123.html'};
 </script></body></html>

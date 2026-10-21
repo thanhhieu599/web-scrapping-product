@@ -9,8 +9,8 @@ from playwright.sync_api import sync_playwright
 from .browser import launch as launch_browser
 from .content import build_content_html
 from .sapo import SapoUploader
-from .scraper import Scraper, pick_images, product_folder, weight_grams
-from .utils import format_vnd, read_json, write_json
+from .scraper import Scraper, pick_images, product_folder, upgrade_image_url, weight_grams
+from .utils import format_vnd, name_with_vendor, read_json, write_json
 
 
 def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
@@ -75,14 +75,36 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                         results.append(rec)
                         continue
 
+                    # Phiên bản (các ô dưới QUY CÁCH) – chỉ đọc khi có nhập "Tên thuộc tính"
+                    variants = []
+                    if opts.get("variant_attr"):
+                        if scraper.page.url.split("#")[0] != url.split("#")[0]:
+                            data = scraper.scrape_url(url)
+                        variants = scraper.scrape_variants(url, data)
+                        log(f"  • Phiên bản: {len(variants)}" + (" → " + ", ".join(
+                            f"{v['value']} ({format_vnd(v['price'])})" for v in variants) if variants else ""))
+
                     folder = product_folder(out_dir, data)
-                    imgs = pick_images(data, cfg.get("image_mode", "quycach"))
+                    strip = [x.lower() for x in cfg.get("image_url_strip_params", [])]
+                    if variants and cfg.get("image_mode", "quycach") == "quycach":
+                        imgs = [v["image"] for v in variants if v.get("image")]   # ảnh sản phẩm theo đúng thứ tự phiên bản
+                    else:
+                        imgs = pick_images(data, cfg.get("image_mode", "quycach"))
                     files = scraper.download_images(imgs, folder / "images", int(cfg.get("max_images", 15)))
+                    variant_imgs = len(files) if variants and len(files) == len(variants) else 0
+                    if variants and not variant_imgs:
+                        log("  ! Số ảnh tải được không khớp số phiên bản → không tự gán ảnh cho phiên bản")
+                    # ảnh trong mô tả: dùng link ảnh gốc của nhà cung cấp
+                    data["spec"]["images"] = [upgrade_image_url(u, strip) if u else "" for u in data["spec"].get("images", [])]
+                    data["feature_images"] = [upgrade_image_url(u, strip) for u in data.get("feature_images", [])]
                     html = build_content_html(data)
                     weight = weight_grams(data) if cfg.get("fill_weight", True) else None
-                    payload = {"name": data["name"], "sku": sku, "price": data.get("price"),
-                               "content_html": html, "image_files": files, "weight_g": weight}
-                    write_json(folder / "product.json", {**data, "weight_g": weight, "image_files": files})
+                    title = name_with_vendor(data["name"], opts.get("vendor")) if opts.get("vendor_in_name", True) else data["name"]
+                    payload = {"name": title, "sku": sku, "price": data.get("price"),
+                               "content_html": html, "image_files": files, "weight_g": weight,
+                               "variants": variants, "variant_images": variant_imgs}
+                    write_json(folder / "product.json", {**data, "title": title, "weight_g": weight,
+                                                         "image_files": files, "variants": variants})
                     if scraper.page.url.split("#")[0] == url.split("#")[0]:
                         scraper.save_source_html(folder / "trang_goc.html")
                     (folder / "noi_dung.html").write_text(html, encoding="utf-8")

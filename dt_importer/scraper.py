@@ -180,6 +180,7 @@ SCRAPE_JS = COMMON_JS + r"""
     features = lis.length ? lis
       : (featRoot.innerText || featRoot.textContent).split(/\n+/).map(norm).filter(Boolean);
   }
+  const featureImages = featRoot ? [...featRoot.querySelectorAll('img')].map(bestSrc).filter(Boolean) : [];
 
   // ---------- THÔNG SỐ ----------
   let specRoot = qs(sel.specs);
@@ -189,16 +190,18 @@ SCRAPE_JS = COMMON_JS + r"""
       if (specRoot) break;
     }
   }
-  const spec = { headers: [], rows: [], text: [], source: '' };
+  const spec = { headers: [], rows: [], text: [], source: '', images: [] };
 
   // Lưới từ <table> thật
   const gridFromTables = (tables) => {
     const g = [];
     for (const tb of tables) for (const tr of tb.querySelectorAll('tr')) {
-      const row = [];
+      const row = { t: [], im: [] };
       for (const c of [...tr.children].filter(c => /^T[DH]$/.test(c.tagName))) {
-        row.push(norm(c.textContent));
-        for (let k = 1; k < (c.colSpan || 1); k++) row.push('');
+        row.t.push(norm(c.textContent));
+        const img = c.querySelector('img');
+        row.im.push(img ? bestSrc(img) : '');
+        for (let k = 1; k < (c.colSpan || 1); k++) { row.t.push(''); row.im.push(''); }
       }
       g.push(row);
     }
@@ -227,14 +230,22 @@ SCRAPE_JS = COMMON_JS + r"""
       if (b.width < 1 || b.height < 1) continue;
       pieces.push({ t, l: b.left, r: b.right, top: b.top, bot: b.bottom });
     }
+    // ảnh trong bảng (vd hàng ảnh sản phẩm phía trên các cột model)
+    for (const img of root.querySelectorAll('img')) {
+      let b = img.getBoundingClientRect();
+      if (b.width < 2 || b.height < 2) { const p = img.parentElement; if (p) b = p.getBoundingClientRect(); }
+      const u = bestSrc(img);
+      if (!u || b.width < 2 || b.height < 2) continue;
+      pieces.push({ t: '', img: u, l: b.left, r: b.right, top: b.top, bot: b.bottom });
+    }
     restore.forEach(([n, css]) => { n.style.cssText = css; });
-    if (pieces.length < 4) return null;
+    if (pieces.filter(p => p.t).length < 4) return null;
     // ghép các mảnh liền nhau trên cùng dòng thành 1 ô (vd "Chiều dài" + "(mm)")
     pieces.sort((a, b) => a.top - b.top || a.l - b.l);
     const cells = [];
     for (const p of pieces) {
       const last = cells[cells.length - 1];
-      if (last && Math.abs(last.top - p.top) < 4 && p.l - last.r < 8 && p.l >= last.l) {
+      if (last && p.t && last.t && Math.abs(last.top - p.top) < 4 && p.l - last.r < 8 && p.l >= last.l) {
         last.t += ' ' + p.t; last.r = Math.max(last.r, p.r); last.bot = Math.max(last.bot, p.bot);
       } else cells.push({ ...p });
     }
@@ -261,10 +272,14 @@ SCRAPE_JS = COMMON_JS + r"""
       return best;
     };
     return rows.map(row => {
-      const out = Array(bands.length).fill('');
-      const wide = row.cells.length === 1 && (row.cells[0].r - row.cells[0].l) >= width * 0.45;
-      if (wide) { out[0] = row.cells[0].t; return out; }
-      row.cells.sort((a, b) => a.l - b.l).forEach(c => { const i = bandOf(c); out[i] = out[i] ? out[i] + ' ' + c.t : c.t; });
+      const out = { t: Array(bands.length).fill(''), im: Array(bands.length).fill('') };
+      const wide = row.cells.length === 1 && row.cells[0].t && (row.cells[0].r - row.cells[0].l) >= width * 0.45;
+      if (wide) { out.t[0] = row.cells[0].t; return out; }
+      row.cells.sort((a, b) => a.l - b.l).forEach(c => {
+        const i = bandOf(c);
+        if (c.img) { if (!out.im[i]) out.im[i] = c.img; }
+        else out.t[i] = out.t[i] ? out.t[i] + ' ' + c.t : c.t;
+      });
       return out;
     });
   };
@@ -276,8 +291,12 @@ SCRAPE_JS = COMMON_JS + r"""
     else { grid = gridFromLayout(specRoot); spec.source = grid ? 'layout' : 'text'; }
     if (grid) {
       let skipQty = false;
-      for (const cells of grid) {
-        if (!cells.length || cells.every(c => !c)) continue;                // hàng ảnh / hàng trống
+      for (const g of grid) {
+        const cells = g.t;
+        if (!cells.length || cells.every(c => !c)) {                         // hàng ảnh (giữ lại) / hàng trống
+          if (g.im.some(Boolean) && !spec.images.length) spec.images = g.im.slice(1);
+          continue;
+        }
         const first = (cells[0] || '').toLowerCase();
         const isQty = c => /\(\d+\)\s*$/.test(c);
         if (first.startsWith('bao gồm')) {                                   // KHÔNG lấy khối "Bao gồm trong sản phẩm"
@@ -303,9 +322,74 @@ SCRAPE_JS = COMMON_JS + r"""
     url: location.href, name, sku, price_text: priceText,
     variant_images: [...new Set(variantImages)].filter(Boolean),
     gallery_images: [...new Set(galleryImages)].filter(Boolean),
-    features, spec,
+    features, feature_images: [...new Set(featureImages)], spec,
     found: { price: !!priceEl, name: !!name, features: !!featRoot, specs: !!specRoot, spec_source: spec.source }
   };
+}
+"""
+
+SWATCH_JS = COMMON_JS + r"""
+(cfg) => {
+  // Các ô lựa chọn dưới chữ QUY CÁCH → đánh dấu data-dt-sw để bấm lần lượt
+  const sel = cfg.selectors || {};
+  document.querySelectorAll('[data-dt-sw]').forEach(e => e.removeAttribute('data-dt-sw'));
+  const all = [...document.body.querySelectorAll('*')].filter(e => !SKIP_TAGS.has(e.tagName));
+  let box = qs(sel.variant_images);
+  if (!box) {
+    const labs = all.filter(e => { const t = low(e.textContent).replace(/[:：]$/, '').trim();
+      return t.length < 40 && ['quy cách', 'quy cach', 'phân loại', 'kiểu'].includes(t); });
+    const lab = labs.filter(e => ![...e.children].some(c => labs.includes(c)))[0];
+    if (!lab) return [];
+    let node = lab;
+    for (let lvl = 0; !box && lvl < 6 && node && node !== document.body; lvl++) {
+      for (let sb = node.nextElementSibling; sb; sb = sb.nextElementSibling)
+        if (sb.querySelector('img, [option-id], .swatch-option') || sb.tagName === 'IMG') { box = sb; break; }
+      node = node.parentElement;
+    }
+  }
+  if (!box) return [];
+  let items = [...box.querySelectorAll('.swatch-option, [option-id], [role=option]')];
+  if (!items.length) items = [...box.querySelectorAll('img')].map(i => i.closest('a, button, li, label, [onclick]') || i.parentElement || i);
+  items = items.filter((e, i, a) => a.indexOf(e) === i && !items.some(o => o !== e && o.contains(e)));
+  return items.map((e, i) => {
+    e.setAttribute('data-dt-sw', String(i));
+    const a = e.closest('a[href]');
+    const href = a ? abs(a.getAttribute('href')) : null;
+    const img = e.querySelector('img') || (e.tagName === 'IMG' ? e : null);
+    const label = norm(e.getAttribute('option-label') || e.getAttribute('aria-label') || e.getAttribute('title')
+                  || e.getAttribute('data-value') || (img && img.getAttribute('alt')) || e.textContent);
+    return { i, label, href: href && !/^javascript:|#$/.test(href) ? href.split('#')[0] : null,
+             option_id: e.getAttribute('option-id') || '', selected: /selected|active|checked/i.test(e.className) };
+  });
+}
+"""
+
+MAGENTO_JS = r"""
+() => {
+  // Magento: dữ liệu phiên bản (giá, ảnh) có sẵn trong jsonConfig của swatch-renderer / configurable
+  const find = (o, d) => { if (!o || typeof o !== 'object' || d > 8) return null;
+    if (o.jsonConfig && o.jsonConfig.attributes) return o.jsonConfig;
+    if (o.spConfig && o.spConfig.attributes) return o.spConfig;
+    for (const k in o) { const r = find(o[k], d + 1); if (r) return r; } return null; };
+  let cfg = null;
+  for (const sc of document.querySelectorAll('script[type="text/x-magento-init"]')) {
+    try { cfg = find(JSON.parse(sc.textContent), 0); } catch (e) {}
+    if (cfg) break;
+  }
+  if (!cfg) return null;
+  const attrs = Object.values(cfg.attributes || {});
+  if (!attrs.length) return null;
+  const a = attrs[0];
+  return (a.options || []).map(o => {
+    const pid = (o.products || [])[0];
+    const pr = pid && cfg.optionPrices && cfg.optionPrices[pid];
+    const imgs = (pid && cfg.images && cfg.images[pid]) || [];
+    const main = imgs.find(x => x.isMain) || imgs[0];
+    const skus = cfg.skus || cfg.sku || cfg.productSkus || {};
+    return { option_id: String(o.id), label: o.label, attribute: a.label,
+             price: pr && pr.finalPrice ? pr.finalPrice.amount : null,
+             image: main ? new URL(main.full || main.img, location.href).href : null, sku: (pid && skus[pid]) || null };
+  });
 }
 """
 
@@ -328,6 +412,13 @@ LINKS_JS = COMMON_JS + r"""
   return { links: [...new Set(out)], next: next ? abs(next.getAttribute('href')) : null };
 }
 """
+
+
+def code_from_url(url):
+    """'.../48-22-8425-hero01.png' -> '48-22-8425' (dùng khi ô quy cách không có chữ)."""
+    name = (url or "").split("?")[0].rsplit("/", 1)[-1]
+    m = re.search(r"\d{2,}-\d{2,}-\d{3,}[A-Z]?|[A-Z]{1,4}\d{3,}[A-Z0-9]*", name, re.I)
+    return m.group(0).upper() if m else ""
 
 
 def upgrade_image_url(url, strip_params):
@@ -378,6 +469,69 @@ class Scraper:
     def is_product(data):
         return bool(data.get("name") and data["found"].get("price") and
                     (data.get("sku") or data["found"].get("specs") or data["found"].get("features")))
+
+    def scrape_variants(self, base_url, base):
+        """Đọc từng phiên bản dưới QUY CÁCH: nhãn, mã SP, giá, ảnh. Trả [] nếu không có."""
+        sel = {"selectors": self.cfg.get("source_selectors", {})}
+        sw = self.page.evaluate(SWATCH_JS, sel)
+        if len(sw) < 2:
+            return []
+        mg = None
+        try:
+            mg = self.page.evaluate(MAGENTO_JS)
+        except Exception:
+            pass
+        variants, changed = [], False
+        for k in range(len(sw)):
+            info = sw[k]
+            v = {"label": info["label"], "sku": "", "price": None, "image": None}
+            try:
+                here = self.page.url.split("#")[0]
+                if info.get("href") and info["href"] != here and info["href"] != base_url:
+                    goto(self.page, info["href"], self.log)          # ô quy cách là link sang trang khác
+                    self.page.wait_for_timeout(800)
+                    d = self.scrape_current()
+                    goto(self.page, base_url, self.log)
+                    self.page.wait_for_timeout(500)
+                else:
+                    self.page.locator(f'[data-dt-sw="{k}"]').first.click(timeout=5000)
+                    self.page.wait_for_timeout(1200)
+                    d = self.scrape_current() if (info.get("href") is None or info["href"] != here) else base
+                    changed = True
+                v["sku"], v["price"] = d.get("sku") or "", d.get("price")
+            except Exception as e:
+                self.log(f"    ! Không đọc được phiên bản {k + 1}: {str(e).splitlines()[0][:100]}")
+            sw = self.page.evaluate(SWATCH_JS, sel) or sw              # đánh dấu lại sau khi trang đổi
+            variants.append(v)
+        if changed:                                                     # trả trang về trạng thái ban đầu
+            goto(self.page, base_url, self.log)
+        # ghép dữ liệu Magento (giá, ảnh gốc, nhãn) theo option-id hoặc thứ tự
+        if mg:
+            by_id = {m["option_id"]: m for m in mg}
+            for i, v in enumerate(variants):
+                m = by_id.get(sw[i]["option_id"] if i < len(sw) else "") or (mg[i] if len(mg) == len(variants) else None)
+                if not m:
+                    continue
+                v["label"] = v["label"] or m["label"]
+                v["price"] = m["price"] if m["price"] else v["price"]
+                v["image"] = m["image"] or v["image"]
+                v["sku"] = m["sku"] or v["sku"]
+        imgs = base.get("variant_images") or []
+        for i, v in enumerate(variants):
+            if not v["image"] and i < len(imgs):
+                v["image"] = imgs[i]
+        # mã SP mỗi phiên bản phải khác nhau; nếu trang không đổi mã khi bấm → dùng nhãn của ô
+        counts = {}
+        for v in variants:
+            counts[v["sku"]] = counts.get(v["sku"], 0) + 1
+        for v in variants:
+            if not v["sku"] or counts[v["sku"]] > 1:
+                v["sku"] = v["label"] or code_from_url(v["image"]) or v["sku"]
+        for v in variants:
+            v["value"] = v["sku"] or v["label"]
+            if v["price"] is None:
+                v["price"] = base.get("price")
+        return variants
 
     def scrape_url(self, url):
         self._open(url)

@@ -61,7 +61,7 @@ def check(cond, msg):
 print("\n=== KIỂM TRA ===")
 check(len(saved) == 2, f"Tạo 2 sản phẩm từ trang danh mục (thực tế {len(saved)})")
 d = next((x for x in saved if x["sku"] == "48-22-8450"), {})
-check(d.get("name") == "Hộp đựng dụng cụ 8450, 8424, 8425", "Tên đúng (không bị viết hoa từ banner)")
+check(d.get("name") == "Hộp đựng dụng cụ Milwaukee 8450, 8424, 8425", f"Tên đúng + chèn nhà cung cấp trước mã: {d.get('name')!r}")
 check(d.get("price", "").replace(".", "") == "2940000", f"Giá = {d.get('price')}")
 check(d.get("vat") is True, "Tick 'Giá đã bao gồm VAT'")
 check(d.get("ship") is True, "Tick 'Sản phẩm yêu cầu vận chuyển'")
@@ -104,6 +104,30 @@ check(im.size == (1200, 900), f"Magento: lấy ảnh gốc 1200x900 thay vì ả
 html = (tmp / "out" / "48-22-8425" / "noi_dung.html").read_text(encoding="utf-8")
 check("<table" in html and "<p>561</p>" not in html, "Magento: nội dung ra BẢNG, không ra từng dòng rời")
 check((tmp / "out" / "48-22-8425" / "trang_goc.html").exists(), "Lưu trang_goc.html để chẩn đoán")
+
+# Phiên bản: ô quy cách là link sang trang khác (trang 1)
+print("\n=== PHIÊN BẢN – Ô QUY CÁCH LÀ LINK ===")
+pipeline.run([f"{base}/san-pham/hop-dung-dung-cu-8450.html"], dict(dry, variant_attr="Model"), cfg)
+pj = json.loads((tmp / "out" / "48-22-8450" / "product.json").read_text(encoding="utf-8"))
+vv = [(v["value"], v["price"]) for v in pj["variants"]]
+check(vv == [("48-22-8424", 3120000), ("48-22-8425", 2820000), ("48-22-8450", 2940000)], f"Link: phiên bản {vv}")
+
+# Phiên bản trên Magento + đăng lên Sapo (thuộc tính, giá/SKU/ảnh từng phiên bản)
+print("\n=== PHIÊN BẢN MAGENTO → SAPO ===")
+saved.clear()
+pipeline.run([f"{base}/san-pham/magento-packout.html"], dict(opts, force=True, variant_attr="Model"), cfg)
+check(len(saved) == 1, "Magento→Sapo: đã lưu 1 sản phẩm")
+d = saved[0] if saved else {}
+check(d.get("name") == "Hộp đựng dụng cụ Milwaukee 8450, 8424, 8425", f"Magento→Sapo: tên {d.get('name')!r}")
+check(d.get("attr") == "Model", f"Magento→Sapo: tên thuộc tính {d.get('attr')!r}")
+vs = d.get("variants", [])
+check([v["value"] for v in vs] == ["48-22-8424", "48-22-8425", "48-22-8450"], f"Magento→Sapo: giá trị {[v['value'] for v in vs]}")
+check([v["price"].replace(".", "") for v in vs] == ["2700000", "2820000", "2940000"], f"Magento→Sapo: giá từng phiên bản {[v['price'] for v in vs]}")
+check([v["sku"] for v in vs] == ["48-22-8424", "48-22-8425", "48-22-8450"], f"Magento→Sapo: SKU từng phiên bản {[v['sku'] for v in vs]}")
+check([v["image"] for v in vs] == [0, 1, 2], f"Magento→Sapo: ảnh đúng từng phiên bản {[v['image'] for v in vs]}")
+c = d.get("content", "")
+check(c.count("<img") >= 4 and "/media/catalog/product/4/8/48-22-8424-hero01.png" in c and "/img/p5.jpg" in c,
+      "Mô tả có ảnh: hàng ảnh trong bảng Thông số + ảnh trong Đặc điểm")
 
 srv.shutdown()
 shutil.rmtree(tmp, ignore_errors=True)

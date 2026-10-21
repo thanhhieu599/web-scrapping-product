@@ -135,6 +135,70 @@ CLICK_OPTION_JS = r"""
 """
 
 
+MARK_IN_ROOT_JS = r"""
+([rootSel, labels, mark]) => {
+  // giống MARK_INPUT_JS nhưng chỉ tìm trong 1 vùng (vd hộp thoại)
+  const root = document.querySelector(rootSel) || document;
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase().replace(/[:*]$/, '').trim();
+  const vis = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+  const want = labels.map(norm);
+  const labs = [...root.querySelectorAll('label, span, div, p, strong, b, th')]
+    .filter(e => vis(e) && e.children.length <= 1 && want.includes(norm(e.textContent)));
+  for (const lab of labs) {
+    let inp = lab.tagName === 'LABEL' && lab.htmlFor ? document.getElementById(lab.htmlFor) : null;
+    for (let n = lab, k = 0; !inp && n && k < 5; n = n.parentElement, k++)
+      inp = [...n.querySelectorAll('input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=file]), textarea')]
+              .find(i => vis(i) && (lab.compareDocumentPosition(i) & Node.DOCUMENT_POSITION_FOLLOWING));
+    if (inp) { inp.setAttribute('data-dt-mark', mark); return true; }
+  }
+  return false;
+}
+"""
+
+MODAL_JS = r"""
+() => {
+  const vis = e => !!(e.offsetWidth || e.offsetHeight) && getComputedStyle(e).visibility !== 'hidden'
+                   && getComputedStyle(e).display !== 'none';
+  document.querySelectorAll('[data-dt-modal]').forEach(e => e.removeAttribute('data-dt-modal'));
+  const c = [...document.querySelectorAll('.modal.show .modal-content, .modal.in .modal-content, .modal-dialog, [role=dialog], .ui-modal, .ui-modal-content, .popup-content, .modal .modal-content, .modal')]
+              .filter(vis);
+  if (!c.length) return false;
+  // ưu tiên phần tử trong cùng (nội dung hộp thoại), không lấy lớp nền phủ ngoài
+  const inner = c.filter(e => !c.some(o => o !== e && e.contains(o)));
+  inner[inner.length - 1].setAttribute('data-dt-modal', '1');
+  return true;
+}
+"""
+
+VARIANT_ROWS_JS = r"""
+(values) => {
+  // tìm dòng của từng phiên bản trong bảng phiên bản (dòng có chữ = giá trị thuộc tính)
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const vis = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+  document.querySelectorAll('[data-dt-vrow]').forEach(e => e.removeAttribute('data-dt-vrow'));
+  const cellText = c => norm(c.textContent) || norm((c.querySelector('input') || {}).value);
+  let head = [];
+  const tables = [...document.querySelectorAll('table')].filter(t => vis(t) && /sku/i.test(t.textContent));
+  const t = tables.find(t => values.every(v => [...t.querySelectorAll('td')].some(c => cellText(c) === norm(v))));
+  let rows = [];
+  if (t) {
+    const hr = t.querySelector('thead tr') || t.querySelector('tr');
+    head = [...hr.children].map(c => norm(c.textContent));
+    rows = [...t.querySelectorAll('tr')].filter(r => r !== hr);
+  } else {
+    rows = [...document.querySelectorAll('button, a')].filter(b => vis(b) && norm(b.textContent) === 'sửa')
+             .map(b => b.closest('tr, li, [class*=row], [class*=item]')).filter(Boolean);
+  }
+  return { head, found: values.map((v, i) => {
+    const r = rows.find(r => [...r.querySelectorAll('td, div, span, a, input')].some(c => cellText(c) === norm(v)));
+    if (!r) return false;
+    r.setAttribute('data-dt-vrow', String(i));
+    return true;
+  }) };
+}
+"""
+
+
 class SapoError(Exception):
     pass
 
@@ -358,17 +422,160 @@ class SapoUploader:
                 self._type(w, p["weight_g"])
                 self.log(f"    · Khối lượng: {p['weight_g']} g")
 
+        issues = []
+        if opts.get("variant_attr") and len(p.get("variants") or []) >= 2:
+            issues = self._add_variants(opts["variant_attr"], p["variants"], int(p.get("variant_images") or 0))
+            for msg in issues:
+                self.log(f"    ! {msg}")
+
         self._fill_combo(self.TYPE_PH, ["Loại"], opts.get("product_type"), "Loại")
         self._fill_combo(self.VENDOR_PH, ["Nhà cung cấp"], opts.get("vendor"), "Nhà cung cấp")
         self._pick_collections(opts.get("collections") or [])
         self._add_tags(opts.get("tags") or [])
 
+        if issues and opts.get("auto_save", True):
+            # không lưu khi phiên bản chưa đầy đủ → để người dùng hoàn tất, tránh đăng sai giá/ảnh
+            if self.cfg.get("output_dir"):
+                logs = Path(self.cfg["output_dir"]) / "logs"
+                logs.mkdir(parents=True, exist_ok=True)
+                stamp = time.strftime("%Y%m%d-%H%M%S")
+                self.dump_html(logs / f"sapo-form-{stamp}.html")
+                self.screenshot(logs / f"sapo-form-{stamp}.png")
+                self.log(f"    ! Đã lưu form Sapo vào output/logs/sapo-form-{stamp}.html (gửi file này để chỉnh công cụ)")
+            self.wait_user("Phiên bản chưa đầy đủ (xem log). Hãy hoàn tất phần Thuộc tính trên trình duyệt "
+                           "rồi bấm Lưu, sau đó bấm Tiếp tục.")
+            return self.page.url
         if opts.get("auto_save", True):
             url = self._save()
             self.log(f"    ✓ Đã lưu: {url}")
             return url
         self.wait_user("Kiểm tra form trên trình duyệt rồi tự bấm Lưu. Xong thì bấm Tiếp tục.")
         return self.page.url
+
+    # ---------------- phiên bản (thuộc tính) ----------------
+    def _modal(self, timeout=5000):
+        end = time.time() + timeout / 1000
+        while time.time() < end:
+            if self.page.evaluate(MODAL_JS):
+                return self.page.locator('[data-dt-modal]').first
+            self.page.wait_for_timeout(250)
+        return None
+
+    def _click_text(self, root, texts):
+        for t in texts:
+            loc = root.get_by_role("button", name=re.compile(rf"^\s*{re.escape(t)}\s*$", re.I))
+            vis = [loc.nth(i) for i in range(loc.count()) if loc.nth(i).is_visible()]
+            if not vis:
+                loc = root.get_by_text(t, exact=True)
+                vis = [loc.nth(i) for i in range(loc.count()) if loc.nth(i).is_visible()]
+            if vis:
+                vis[-1].click()
+                return True
+        return False
+
+    def _fill_in(self, root_sel, labels, value, mark):
+        if self.page.evaluate(MARK_IN_ROOT_JS, [root_sel, labels, mark]):
+            self._type(self.page.locator(f'[data-dt-mark="{mark}"]').first, value)
+            return True
+        return False
+
+    def _add_variants(self, attr_name, variants, n_images):
+        """Tạo thuộc tính + giá trị, rồi đặt Giá / SKU / Ảnh cho từng phiên bản. Trả danh sách việc chưa làm được."""
+        issues = []
+        values = [v["value"] for v in variants]
+        # 1) mở khung Thuộc tính
+        if not self.page.locator('input[placeholder="Nhập giá trị thuộc tính"]:visible').count():
+            if not self._click_text(self.page, ["Thêm thuộc tính"]):
+                return ["Không thấy nút 'Thêm thuộc tính'"]
+            self.page.wait_for_timeout(600)
+        # 2) tên thuộc tính
+        if not self._fill_in("body", ["Tên thuộc tính"], attr_name, "attr-name"):
+            issues.append("Không điền được 'Tên thuộc tính'")
+        # 3) giá trị (gõ từng giá trị rồi Enter)
+        val_in = self._by_placeholder(["Nhập giá trị thuộc tính"])
+        if not val_in:
+            return issues + ["Không thấy ô 'Giá trị' thuộc tính"]
+        for v in values:
+            val_in.click()
+            val_in.press_sequentially(v, delay=15)
+            val_in.press("Enter")
+            self.page.wait_for_timeout(350)
+            if val_in.input_value().strip():          # ô kiểu "tag" dùng dấu phẩy
+                val_in.press(",")
+                self.page.wait_for_timeout(300)
+        val_in.press("Tab")
+        self.page.wait_for_timeout(1500)
+        self.log(f"    · Thuộc tính '{attr_name}': {', '.join(values)}")
+        # 4) từng phiên bản
+        info = self.page.evaluate(VARIANT_ROWS_JS, values)
+        head = info.get("head") or []
+        col = lambda *names: next((i for i, h in enumerate(head) if any(h == n or h.startswith(n) for n in names)), None)
+        c_price, c_sku = col("giá"), col("sku", "mã sản phẩm")
+        for i, v in enumerate(variants):
+            if not info["found"][i]:
+                issues.append(f"Không thấy dòng phiên bản '{v['value']}'")
+                continue
+            row = self.page.locator(f'[data-dt-vrow="{i}"]').first
+            ok_price = ok_sku = False
+            # 4a) ô nhập ngay trên dòng (nếu bảng cho sửa trực tiếp)
+            cells = row.locator("td")
+            for c_idx, val, kind in ((c_price, v.get("price"), "price"), (c_sku, v.get("sku"), "sku")):
+                if c_idx is None or val in (None, "") or c_idx >= cells.count():
+                    continue
+                inp = cells.nth(c_idx).locator("input:visible")
+                if inp.count():
+                    self._type(inp.first, val)
+                    ok_price |= kind == "price"
+                    ok_sku |= kind == "sku"
+            # 4b) không sửa trực tiếp được → nút "Sửa" mở hộp thoại
+            if (not ok_price and v.get("price")) or (not ok_sku and v.get("sku")):
+                btn = row.get_by_text("Sửa", exact=True)
+                if btn.count():
+                    btn.first.click()
+                    modal = self._modal()
+                    if modal:
+                        if v.get("price") and not ok_price:
+                            ok_price = self._fill_in("[data-dt-modal]", ["Giá", "Giá bán"], v["price"], f"vp{i}")
+                        if v.get("sku") and not ok_sku:
+                            ok_sku = self._fill_in("[data-dt-modal]", ["Mã sản phẩm / SKU", "Mã sản phẩm/SKU", "SKU", "Mã sản phẩm"], v["sku"], f"vs{i}")
+                        if not self._click_text(modal, ["Lưu", "Cập nhật", "Xong", "Đồng ý", "Áp dụng"]):
+                            issues.append(f"Không đóng được hộp thoại Sửa của '{v['value']}'")
+                            self.page.keyboard.press("Escape")
+                        self.page.wait_for_timeout(600)
+                        self.page.evaluate(VARIANT_ROWS_JS, values)
+                        row = self.page.locator(f'[data-dt-vrow="{i}"]').first
+            if v.get("price") and not ok_price:
+                issues.append(f"Chưa đặt được giá cho '{v['value']}'")
+            if v.get("sku") and not ok_sku:
+                issues.append(f"Chưa đặt được SKU cho '{v['value']}'")
+            # 4c) ảnh: bấm ô ảnh trên dòng → chọn ảnh thứ i trong hộp thoại
+            if i < n_images:
+                try:
+                    pic = row.locator("img, [class*=image], [class*=thumb], [class*=photo]").first
+                    pic.click(timeout=3000)
+                    modal = self._modal()
+                    if not modal:
+                        raise SapoError("không mở hộp chọn ảnh")
+                    thumbs = modal.locator("img")
+                    if thumbs.count() <= i:
+                        raise SapoError(f"hộp thoại chỉ có {thumbs.count()} ảnh")
+                    thumbs.nth(i).click()
+                    self.page.wait_for_timeout(300)
+                    self._click_text(modal, ["Lưu", "Chọn", "Xong", "Đồng ý", "Áp dụng", "Cập nhật"])
+                    self.page.wait_for_timeout(600)
+                    self.page.evaluate(VARIANT_ROWS_JS, values)
+                except Exception as e:
+                    issues.append(f"Chưa gán ảnh cho '{v['value']}' ({str(e).splitlines()[0][:80]})")
+                    self.page.keyboard.press("Escape")
+            p = f"{v['price']:,}".replace(",", ".") if v.get("price") else "-"
+            self.log(f"    · Phiên bản {v['value']}: giá {p} | SKU {v.get('sku') or '-'} | ảnh {i + 1 if i < n_images else '-'}")
+        return issues
+
+    def dump_html(self, path):
+        try:
+            Path(path).write_text(self.page.content(), encoding="utf-8")
+        except Exception:
+            pass
 
     def screenshot(self, path):
         try:

@@ -59,3 +59,26 @@ def write_json(path, data):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+_CODE_TOKEN = re.compile(r"^[(\[]?(?=(?:\D*\d){3})[A-Z0-9]+(?:[-./][A-Z0-9]+)*[,;)\]]?$|^[A-Z]{1,4}\d{2,}[A-Z0-9-]*[,;]?$", re.I)
+
+
+# ký hiệu tiêu chuẩn / cấp độ – không phải mã sản phẩm
+_STANDARD = re.compile(r"^(IP\d{2}|EN\d+|ISO\d+|ANSI|TCVN\d*|ASTM\w*|CE|UV\d*|S[1-5]P?|SRC|ESD)[,;]?$", re.I)
+
+
+def name_with_vendor(name, vendor):
+    """Chèn nhà cung cấp vào tên sản phẩm.
+    - Tên có mã SP  → chèn ngay trước mã đầu tiên: 'Hộp đựng dụng cụ 8450, 8424' → 'Hộp đựng dụng cụ Milwaukee 8450, 8424'
+    - Tên không mã  → thêm vào cuối:              'Găng tay chống cắt' → 'Găng tay chống cắt Milwaukee'
+    - Tên đã có nhà cung cấp → giữ nguyên.
+    """
+    name, vendor = (name or "").strip(), (vendor or "").strip()
+    if not vendor or not name or vendor.lower() in name.lower():
+        return name
+    words = name.split()
+    for i, w in enumerate(words):
+        if i > 0 and _CODE_TOKEN.match(w) and not _STANDARD.match(w):
+            return " ".join(words[:i] + [vendor] + words[i:])
+    return f"{name} {vendor}"
