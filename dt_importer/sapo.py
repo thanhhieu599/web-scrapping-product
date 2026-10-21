@@ -7,6 +7,8 @@ import re
 import time
 from pathlib import Path
 
+from .browser import goto, launch as launch_browser
+
 MARK_INPUT_JS = r"""
 ([labels, mark]) => {
   const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -148,12 +150,9 @@ class SapoUploader:
         self.cfg, self.log = cfg, log
         self.wait_user = wait_user or (lambda msg: input(msg + " [Enter để tiếp tục] "))
         Path(cfg["profile_dir"]).mkdir(parents=True, exist_ok=True)
-        kw = dict(headless=bool(cfg.get("sapo_headless", False)), viewport={"width": 1400, "height": 900}, locale="vi-VN")
-        if cfg.get("browser_channel"):
-            kw["channel"] = cfg["browser_channel"]
-        if cfg.get("browser_executable"):
-            kw["executable_path"] = cfg["browser_executable"]
-        self.ctx = pw.chromium.launch_persistent_context(cfg["profile_dir"], **kw)
+        self.ctx = launch_browser(pw, cfg, log, headless=bool(cfg.get("sapo_headless", False)),
+                                  profile_dir=cfg["profile_dir"], viewport={"width": 1400, "height": 900},
+                                  locale="vi-VN")
         self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
         self.page.set_default_timeout(20000)
         self.create_url = cfg["sapo_admin_url"].rstrip("/") + "/products/create"
@@ -193,7 +192,7 @@ class SapoUploader:
 
     # ---------------- đăng nhập ----------------
     def ensure_login(self):
-        self.page.goto(self.create_url, wait_until="domcontentloaded")
+        goto(self.page, self.create_url, self.log)
         if self._wait_form():
             return
         self.log("⚠ Chưa đăng nhập Sapo. Hãy đăng nhập trong cửa sổ trình duyệt vừa mở (chỉ cần làm 1 lần).")
@@ -203,7 +202,7 @@ class SapoUploader:
             url = self.page.url
             if "/admin" in url and "login" not in url.lower():
                 if "/products/create" not in url:
-                    self.page.goto(self.create_url, wait_until="domcontentloaded")
+                    goto(self.page, self.create_url, self.log)
                 if self._wait_form(8000):
                     self.log("✓ Đã đăng nhập Sapo.")
                     return
@@ -324,7 +323,7 @@ class SapoUploader:
     # ---------------- tạo 1 sản phẩm ----------------
     def create_product(self, p, opts):
         """p: dict gồm name, sku, price, content_html, image_files, weight_g."""
-        self.page.goto(self.create_url, wait_until="domcontentloaded")
+        goto(self.page, self.create_url, self.log)
         if not self._wait_form(30000):
             self.ensure_login()
 

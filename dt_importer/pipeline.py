@@ -6,6 +6,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+from .browser import launch as launch_browser
 from .content import build_content_html
 from .sapo import SapoUploader
 from .scraper import Scraper, pick_images, product_folder, weight_grams
@@ -26,12 +27,7 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
     stopped = lambda: bool(stop_flag and stop_flag())
 
     with sync_playwright() as pw:
-        kw = {"headless": True}
-        if cfg.get("browser_channel"):
-            kw["channel"] = cfg["browser_channel"]
-        if cfg.get("browser_executable"):
-            kw["executable_path"] = cfg["browser_executable"]
-        browser = pw.chromium.launch(**kw)
+        browser = launch_browser(pw, cfg, log, headless=True)
         scraper = Scraper(browser, cfg, log)
         uploader = None
         try:

@@ -1,6 +1,6 @@
 {
   "sapo_admin_url": "https://trangthietbivn.mysapo.net/admin",
-  "browser_channel": "",
+  "browser_channel": "auto",
   "browser_executable": "",
   "profile_dir": "browser_profile",
   "output_dir": "output",

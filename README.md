@@ -135,7 +135,7 @@ output/
 | `listing_max_pages` | `10` | Số trang tối đa khi quét trang danh mục |
 | `product_link_pattern` | `""` | Regex lọc link sản phẩm ở trang danh mục, vd `"/san-pham/"`. Để trống = tự nhận (link có ảnh, ngoài menu) |
 | `delay_seconds` | `2` | Nghỉ giữa 2 sản phẩm (tránh bị chặn) |
-| `browser_channel` | `""` | Đặt `"chrome"` hoặc `"msedge"` để dùng Chrome/Edge có sẵn trên máy |
+| `browser_channel` | `"auto"` | `auto` = dùng Microsoft Edge → Google Chrome có sẵn trên máy → Chromium đóng gói kèm. Có thể đặt cố định `"msedge"`, `"chrome"`, `"bundled"` |
 | `browser_executable` | `""` | Đường dẫn file chạy trình duyệt (nếu cần) |
 | `source_selectors` | trống | Ghi đè CSS selector khi trang nguồn đổi giao diện (xem mục 7) |
 
@@ -169,6 +169,7 @@ tests/run_mock_test.py   # kiểm thử tự động trên trang giả lập
 
 | Hiện tượng | Cách xử lý |
 |---|---|
+| `ERR_CONNECTION_RESET` / `ERR_CONNECTION_CLOSED` / `ERR_SSL_PROTOCOL_ERROR` | Ứng dụng tự thử lại 3 lần rồi **tự chẩn đoán** (ghi ngay trong log). Thường do **phần mềm diệt virus quét HTTPS** hoặc chặn chương trình lạ → thêm thư mục ứng dụng vào *Exclusions*, hoặc tắt "HTTPS scanning / Web Shield". Đảm bảo máy có Edge hoặc Chrome (ứng dụng ưu tiên dùng). Nếu chẩn đoán báo "máy không kết nối được": tắt VPN, hỏi IT về proxy/tường lửa, thử mạng 4G |
 | Log báo "Bỏ qua: không phải trang sản phẩm" | Trang nguồn khác bố cục. Điền `source_selectors` trong `config.json`, ví dụ `"name": ".product-info h2"`, `"sku": ".product-code"`, `"price": ".price"`, `"variant_images": ".swatches"`, `"features": "#dac-diem"`, `"specs": "#thong-so"` (chuột phải → Inspect trên trang nguồn để lấy) |
 | Trang danh mục lấy nhầm link (tin tức, banner…) | Đặt `product_link_pattern`, vd `"/san-pham/"` |
 | "Danh mục … không có trong Sapo" | Tạo danh mục đó trên Sapo trước (tên phải trùng khớp) |

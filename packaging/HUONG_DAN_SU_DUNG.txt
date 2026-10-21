@@ -30,4 +30,11 @@ YÊU CẦU: Windows 10/11 64-bit. Không cần cài Python hay trình duyệt.
    - config.json       : cấu hình nâng cao (xem README.md)
    - nhat_ky.log       : nhật ký kỹ thuật khi có sự cố
 
+6. LỖI KẾT NỐI (ERR_CONNECTION_RESET...)
+   - Ứng dụng tự dùng Microsoft Edge / Google Chrome có sẵn trên máy, tự thử lại 3 lần
+     và ghi CHẨN ĐOÁN ngay trong khung log.
+   - Thường do phần mềm diệt virus quét HTTPS: thêm thư mục DT-Sapo-Importer vào
+     danh sách loại trừ (Exclusions) hoặc tắt "HTTPS scanning / Web Shield".
+   - Nếu báo máy không kết nối được: tắt VPN, thử mạng 4G, hỏi IT về proxy/tường lửa.
+
 CHUYỂN SANG MÁY KHÁC: sao chép nguyên thư mục (có thể bỏ browser_profile\ để đăng nhập lại).

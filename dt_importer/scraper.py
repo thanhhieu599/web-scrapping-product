@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlparse, urlencode, parse_qsl, urlunparse
 
+from .browser import goto
 from .utils import parse_vnd, slugify
 
 COMMON_JS = r"""
@@ -247,17 +248,18 @@ class Scraper:
     def __init__(self, browser, cfg, log=print):
         self.cfg = cfg
         self.log = log
-        self.ctx = browser.new_context(
-            viewport={"width": 1366, "height": 900}, locale="vi-VN",
-            user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"))
+        # Dùng đúng User-Agent của trình duyệt, chỉ bỏ chữ "Headless" (một số web chặn bot theo chữ này)
+        probe = browser.new_page()
+        ua = probe.evaluate("navigator.userAgent").replace("HeadlessChrome", "Chrome")
+        probe.close()
+        self.ctx = browser.new_context(viewport={"width": 1366, "height": 900}, locale="vi-VN", user_agent=ua)
         self.page = self.ctx.new_page()
 
     def close(self):
         self.ctx.close()
 
     def _open(self, url):
-        self.page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        goto(self.page, url, self.log)
         try:
             self.page.wait_for_load_state("networkidle", timeout=15000)
         except Exception:
