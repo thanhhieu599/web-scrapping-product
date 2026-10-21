@@ -10,10 +10,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-ARGS = ["--disable-quic", "--no-first-run", "--no-default-browser-check"]
-# Chỉ dùng cho trình duyệt CHẠY ẨN (cào web nguồn): giảm khả năng bị nhận diện là bot.
-# Không dùng cho cửa sổ hiển thị (Sapo) vì Chrome/Edge sẽ hiện cảnh báo "unsupported command-line flag".
-HEADLESS_ONLY_ARGS = ["--disable-blink-features=AutomationControlled"]
+ARGS = ["--disable-quic", "--disable-blink-features=AutomationControlled", "--no-first-run",
+        "--no-default-browser-check"]
 NET_ERRORS = ("ERR_CONNECTION_RESET", "ERR_CONNECTION_CLOSED", "ERR_CONNECTION_REFUSED",
               "ERR_CONNECTION_TIMED_OUT", "ERR_TIMED_OUT", "ERR_NETWORK_CHANGED",
               "ERR_EMPTY_RESPONSE", "ERR_SSL_PROTOCOL_ERROR", "ERR_PROXY_CONNECTION_FAILED",
@@ -33,44 +31,23 @@ def _candidates(cfg):
     return [(ch, {"channel": ch}), ("", {})]
 
 
-# Playwright mặc định thêm cờ --no-sandbox (tắt "hộp cát" bảo mật) → Edge/Chrome hiện cảnh báo
-# "You're using an unsupported command-line flag: --no-sandbox". Ta BẬT lại hộp cát (chromium_sandbox=True);
-# chỉ khi máy không chạy được hộp cát (vd Linux chạy bằng root) mới quay về cách cũ.
-# Bỏ cờ --enable-automation để không hiện thanh "trình duyệt đang bị điều khiển bởi phần mềm tự động".
-HIDDEN_DEFAULT_ARGS = ["--enable-automation", "--no-sandbox"]
-
-
 def launch(pw, cfg, log=print, headless=True, profile_dir=None, **extra):
     """Trả về Browser (profile_dir=None) hoặc BrowserContext lưu phiên (profile_dir)."""
     errors = []
     for name, kw in _candidates(cfg):
-        for sandbox in (True, False):
-            opts = dict(headless=headless, args=ARGS + (HEADLESS_ONLY_ARGS if headless else []), chromium_sandbox=sandbox,
-                        ignore_default_args=HIDDEN_DEFAULT_ARGS if sandbox else ["--enable-automation"], **kw)
-            try:
-                if profile_dir:
-                    # mỗi loại trình duyệt 1 hồ sơ riêng (hồ sơ Edge/Chrome/Chromium không dùng chung được)
-                    path = str(Path(profile_dir) / (name or "chromium"))
-                    obj = pw.chromium.launch_persistent_context(path, **opts, **extra)
-                else:
-                    obj = pw.chromium.launch(**opts)
-                label = LABEL.get(name, kw.get("executable_path", name))
-                log(f"  (trình duyệt: {label}{'' if sandbox else ' – không bật được hộp cát bảo mật trên máy này'})")
-                return obj
-            except Exception as e:
-                first = str(e).splitlines()[0]
-                if sandbox and _sandbox_problem(str(e)):
-                    continue                  # thử lại không hộp cát
-                errors.append(f"{LABEL.get(name, name)}: {first}")
-                break
+        opts = dict(headless=headless, args=ARGS, **kw)
+        try:
+            if profile_dir:
+                # mỗi loại trình duyệt 1 hồ sơ riêng (hồ sơ Edge/Chrome/Chromium không dùng chung được)
+                path = str(Path(profile_dir) / (name or "chromium"))
+                obj = pw.chromium.launch_persistent_context(path, **opts, **extra)
+            else:
+                obj = pw.chromium.launch(**opts)
+            log(f"  (trình duyệt: {LABEL.get(name, kw.get('executable_path', name))})")
+            return obj
+        except Exception as e:
+            errors.append(f"{LABEL.get(name, name)}: {str(e).splitlines()[0]}")
     raise RuntimeError("Không mở được trình duyệt nào:\n  " + "\n  ".join(errors))
-
-
-def _sandbox_problem(msg):
-    m = msg.lower()
-    return any(k in m for k in ("sandbox", "running as root", "no usable sandbox", "zygote", "namespace",
-                                "target page, context or browser has been closed", "browser closed",
-                                "process did exit"))
 
 
 def is_net_error(exc):

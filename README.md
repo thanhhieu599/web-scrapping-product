@@ -213,7 +213,6 @@ tests/run_mock_test.py   # kiểm thử tự động trên trang giả lập
 
 | Hiện tượng | Cách xử lý |
 |---|---|
-| Thanh cảnh báo *"You're using an unsupported command-line flag: --no-sandbox"* (bản v1.0.10 trở về trước) | Đã sửa từ v1.0.11: ứng dụng bật lại **hộp cát bảo mật** của Edge/Chrome và không dùng cờ gây cảnh báo trên cửa sổ hiển thị. Tải bản mới nhất. Nếu máy không bật được hộp cát, log ghi "không bật được hộp cát bảo mật trên máy này" – ứng dụng vẫn chạy bình thường |
 | `ERR_CONNECTION_RESET` / `ERR_CONNECTION_CLOSED` / `ERR_SSL_PROTOCOL_ERROR` | Ứng dụng tự thử lại 3 lần rồi **tự chẩn đoán** (ghi ngay trong log). Thường do **phần mềm diệt virus quét HTTPS** hoặc chặn chương trình lạ → thêm thư mục ứng dụng vào *Exclusions*, hoặc tắt "HTTPS scanning / Web Shield". Đảm bảo máy có Edge hoặc Chrome (ứng dụng ưu tiên dùng). Nếu chẩn đoán báo "máy không kết nối được": tắt VPN, hỏi IT về proxy/tường lửa, thử mạng 4G |
 | Log báo "Bỏ qua: không phải trang sản phẩm" | Trang nguồn khác bố cục. Điền `source_selectors` trong `config.json`, ví dụ `"name": ".product-info h2"`, `"sku": ".product-code"`, `"price": ".price"`, `"variant_images": ".swatches"`, `"features": "#dac-diem"`, `"specs": "#thong-so"` (chuột phải → Inspect trên trang nguồn để lấy) |
 | Trang danh mục lấy nhầm link (tin tức, banner…) | Đặt `product_link_pattern`, vd `"/san-pham/"` |
@@ -229,7 +228,6 @@ python tests/run_mock_test.py     # toàn bộ quy trình: cào → đăng Sapo 
 python tests/test_edge_cases.py   # tình huống xấu: mất mạng, chưa đăng nhập, ảnh lỗi, "Liên hệ", bấm Dừng...
 python tests/test_categories.py   # gán danh mục nhiều cấp: breadcrumb → bảng ghép → Sapo
 python tests/test_gui.py          # giao diện: tự điền ô, bấm Chạy, kiểm tra kết quả
-python tests/test_browser.py      # trình duyệt có cửa sổ: không cảnh báo, hộp cát bảo mật bật
 ```
 Mỗi lần cập nhật mã, GitHub chạy **toàn bộ** các bộ kiểm thử trên Windows với Microsoft Edge thật;
 chỉ khi tất cả đạt mới đóng gói và phát hành bản mới.
