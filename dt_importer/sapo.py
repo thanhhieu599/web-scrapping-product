@@ -149,9 +149,7 @@ MARK_FILE_INPUT_JS = r"""
 
 CLICK_OPTION_JS = r"""
 ([value, allowAdd]) => {
-  // so khớp không phân biệt hoa/thường và dấu tiếng Việt
-  const norm = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D')
-                       .replace(/\s+/g, ' ').trim().toLowerCase();
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
   const v = norm(value);
   const vis = e => !!(e.offsetWidth || e.offsetHeight) && getComputedStyle(e).visibility !== 'hidden';
   const opts = [...document.querySelectorAll('li, a, [role=option], .dropdown-item, .item, label, span, div')]
@@ -512,7 +510,7 @@ class SapoUploader:
 
         self._fill_combo(self.TYPE_PH, ["Loại"], opts.get("product_type"), "Loại")
         self._fill_combo(self.VENDOR_PH, ["Nhà cung cấp"], opts.get("vendor"), "Nhà cung cấp")
-        self._pick_collections(p["collections"] if "collections" in p else (opts.get("collections") or []))
+        self._pick_collections(opts.get("collections") or [])
         self._add_tags(opts.get("tags") or [])
 
         if issues and opts.get("auto_save", True):

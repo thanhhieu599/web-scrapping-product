@@ -35,7 +35,7 @@
 const $=id=>document.getElementById(id);
 $('type').addEventListener('input',()=>{$('dd').style.display='block'});
 document.querySelectorAll('#dd li').forEach(li=>li.onclick=()=>{$('type').value=li.textContent;$('dd').style.display='none'});
-$('colq').addEventListener('input',e=>{const v=e.target.value.toLowerCase();$('cols').innerHTML=['PPE','Lưu trữ dụng cụ','Milwaukee','Dụng cụ cầm tay','Kìm','Kìm cắt','Bộ dụng cụ'].filter(c=>c.toLowerCase().includes(v)).map(c=>`<label><input type=checkbox class=col value="${c}">${c}</label>`).join('')});
+$('colq').addEventListener('input',e=>{const v=e.target.value.toLowerCase();$('cols').innerHTML=['PPE','Lưu trữ dụng cụ','Milwaukee'].filter(c=>c.toLowerCase().includes(v)).map(c=>`<label><input type=checkbox class=col value="${c}">${c}</label>`).join('')});
 const chosen=new Set();document.addEventListener('change',e=>{if(e.target.classList.contains('col'))e.target.checked?chosen.add(e.target.value):chosen.delete(e.target.value)});
 const tags=[];$('tagq').addEventListener('keydown',e=>{if(e.key==='Enter'){tags.push(e.target.value);e.target.value='';$('tags').textContent=tags.join(',')}});
 let files=[];$('imgs').addEventListener('change',e=>{files=files.concat([...e.target.files].map(f=>f.name));$('thumbs').textContent=files.join(',')});

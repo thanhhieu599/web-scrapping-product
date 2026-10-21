@@ -21,7 +21,7 @@ python -m playwright install chromium
 if ($LASTEXITCODE -ne 0) { throw "Tải Chromium lỗi" }
 
 # 3) File cấu hình + hướng dẫn đi kèm
-Copy-Item config.json, urls_mau.txt, danh_muc_mau.csv, README.md $dist
+Copy-Item config.json, urls_mau.txt, README.md $dist
 Copy-Item packaging\HUONG_DAN_SU_DUNG.txt $dist
 
 if (-not $SkipZip) {

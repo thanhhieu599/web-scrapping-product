@@ -73,10 +73,7 @@ SCRAPE_JS = COMMON_JS + r"""
   }
 
   // ---------- MÃ SẢN PHẨM (chuỗi nhỏ ngay dưới tên) ----------
-  // mã SP: 48-22-8450, ABC123, hoặc dãy số thuần 6–14 chữ số (vd mã Irwin 10505483)
-  const SKU_RE = /^(?=.*\d)[A-Z0-9]{1,10}([-./][A-Z0-9]{1,12})+$|^(?=.*\d)(?=.*[A-Z])[A-Z0-9]{5,20}$|^\d{6,14}$/i;
-  const MONEY_RE = /^\d{1,3}([.,\s]\d{3})+$/;            // "350.000" (phần số của giá) – không phải mã
-  const nearPrice = e => priceEl && (priceEl.contains(e) || e.contains(priceEl) || !!e.closest('.price-box'));
+  const SKU_RE = /^(?=.*\d)[A-Z0-9]{1,10}([-./][A-Z0-9]{1,12})+$|^(?=.*\d)(?=.*[A-Z])[A-Z0-9]{5,20}$/i;
   const cleanSku = t => norm(t).replace(/^(mã|mã sp|mã sản phẩm|sku|model)\s*[:：]?\s*/i, '');
   let sku = '';
   const skuEl = qs(sel.sku) || firstOf(['.product-info-main .product.attribute.sku .value',
@@ -86,8 +83,7 @@ SCRAPE_JS = COMMON_JS + r"""
     // chuỗi dạng mã (vd 48-22-8450) nằm giữa tên và giá trong khối thông tin
     const root = info || document.body;
     const cands = [...root.querySelectorAll('*')].filter(e => e.children.length === 0 && visible(e) && !inPopup(e))
-      .filter(e => { const t = cleanSku(e.textContent);
-        return t.length <= 40 && SKU_RE.test(t) && !PRICE_RE.test(t) && !MONEY_RE.test(t) && !nearPrice(e); });
+      .filter(e => { const t = cleanSku(e.textContent); return t.length <= 40 && SKU_RE.test(t) && !PRICE_RE.test(t); });
     const before = priceEl ? cands.filter(e => e.compareDocumentPosition(priceEl) & Node.DOCUMENT_POSITION_FOLLOWING) : cands;
     const pick = before[0] || cands[0];
     if (pick) sku = cleanSku(pick.textContent);
@@ -397,39 +393,6 @@ MAGENTO_JS = r"""
 }
 """
 
-BREADCRUMB_JS = COMMON_JS + r"""
-() => {
-  // Đường dẫn danh mục (breadcrumb): JSON-LD → microdata/HTML. Bỏ "Trang chủ".
-  const clean = t => norm(t).replace(/^[>»\/›|\-\s]+|[>»\/›|\-\s]+$/g, '').trim();
-  const HOME = /^(trang chủ|trang chu|home|homepage|trang nhất)$/i;
-  let out = [];
-  for (const sc of document.querySelectorAll('script[type="application/ld+json"]')) {
-    try {
-      const j = JSON.parse(sc.textContent);
-      const arr = Array.isArray(j) ? j : (j['@graph'] || [j]);
-      const bl = arr.find(o => o && o['@type'] === 'BreadcrumbList' && o.itemListElement);
-      if (bl) {
-        out = [...bl.itemListElement].sort((a, b) => (a.position || 0) - (b.position || 0))
-          .map(e => clean(e.name || (e.item && e.item.name) || ''));
-        break;
-      }
-    } catch (e) {}
-  }
-  if (!out.length) {
-    const box = document.querySelector('[itemtype*="BreadcrumbList"], nav[aria-label*="readcrumb"], .breadcrumbs, .breadcrumb, [class*="breadcrumb"]');
-    if (box) {
-      let items = [...box.querySelectorAll('[itemprop="itemListElement"], li')];
-      if (!items.length) items = [...box.querySelectorAll('a, span')];
-      items = items.filter(e => !items.some(o => o !== e && e.contains(o)));
-      out = items.map(e => clean(e.textContent));
-    }
-  }
-  out = out.filter(t => t && t.length < 80);
-  while (out.length && HOME.test(out[0])) out.shift();
-  return out;
-}
-"""
-
 LINKS_JS = COMMON_JS + r"""
 (cfg) => {
   const pat = cfg.pattern ? new RegExp(cfg.pattern, 'i') : null;
@@ -449,18 +412,6 @@ LINKS_JS = COMMON_JS + r"""
   return { links: [...new Set(out)], next: next ? abs(next.getAttribute('href')) : null };
 }
 """
-
-
-def product_category_path(data, listing_path=None):
-    """Đường dẫn danh mục của 1 sản phẩm: breadcrumb trên trang sản phẩm (bỏ mục cuối là tên SP);
-    nếu trang SP không có thì dùng đường dẫn của trang danh mục đã dán link."""
-    path = list(data.get("breadcrumb") or [])
-    name = (data.get("name") or "").lower()
-    if path and name and (path[-1].lower() in name or name in path[-1].lower()):
-        path = path[:-1]
-    if len(path) < len(listing_path or []):
-        path = list(listing_path)
-    return path
 
 
 def code_from_url(url):
@@ -519,11 +470,6 @@ class Scraper:
     def scrape_current(self):
         data = self.page.evaluate(SCRAPE_JS, {"selectors": self.cfg.get("source_selectors", {})})
         data["price"] = parse_vnd(data.get("price_text"))
-        try:
-            crumbs = self.page.evaluate(BREADCRUMB_JS) or []
-        except Exception:
-            crumbs = []
-        data["breadcrumb"] = crumbs
         return data
 
     @staticmethod
@@ -610,16 +556,11 @@ class Scraper:
         return self.scrape_current()
 
     def expand(self, url):
-        """Từ 1 URL (trang sản phẩm hoặc trang danh mục) → (danh sách URL sản phẩm, dữ liệu đã cào,
-        đường dẫn danh mục của trang danh mục – dùng cho sản phẩm không có breadcrumb riêng)."""
+        """Trả về danh sách URL sản phẩm từ 1 URL (trang sản phẩm hoặc trang danh mục)."""
         data = self.scrape_url(url)
         if self.is_product(data):
-            return [url], {url: data}, []
-        listing_path = list(data.get("breadcrumb") or [])
-        if data.get("name") and (not listing_path or listing_path[-1].lower() != data["name"].lower()):
-            listing_path.append(data["name"])
-        self.log(f"  → Đây là trang danh mục" + (f" ({' > '.join(listing_path)})" if listing_path else "")
-                 + ", đang lấy danh sách sản phẩm...")
+            return [url], {url: data}
+        self.log(f"  → Đây là trang danh mục, đang lấy danh sách sản phẩm...")
         links, seen_pages, page_url = [], set(), url
         for _ in range(int(self.cfg.get("listing_max_pages", 10))):
             if page_url in seen_pages:
@@ -633,7 +574,7 @@ class Scraper:
             if not res.get("next"):
                 break
             page_url = res["next"]
-        return links, {}, listing_path
+        return links, {}
 
     def _fetch_bytes(self, url, tries=3):
         """Tải 1 file qua CHÍNH trình duyệt (cùng đường mạng, cookie, chứng chỉ với trang) – có thử lại."""

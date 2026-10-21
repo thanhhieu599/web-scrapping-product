@@ -33,8 +33,7 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 
 tmp = Path(tempfile.mkdtemp())
 cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
-cfg.update(output_dir=str(tmp / "out"), profile_dir=str(tmp / "profile"), delay_seconds=0,
-           category_map_file=str(tmp / "danh_muc.csv"))
+cfg.update(output_dir=str(tmp / "out"), profile_dir=str(tmp / "profile"), delay_seconds=0)
 if os.environ.get("DT_BROWSER"):
     cfg["browser_executable"] = os.environ["DT_BROWSER"]
 cfg_path = tmp / "config.json"

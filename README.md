@@ -24,8 +24,7 @@ Chỉ cần dán **link trang nguồn** (trang 1 sản phẩm hoặc cả trang 
 | Ảnh nằm trong phần mô tả (vd hàng ảnh sản phẩm phía trên bảng Thông số, ảnh minh hoạ trong Đặc điểm) | → | Giữ trong **Nội dung**, đúng vị trí như trang gốc (dùng link ảnh gốc của nhà cung cấp) |
 | Bạn nhập: Loại sản phẩm | → | **Loại** |
 | Bạn nhập: Nhà cung cấp | → | **Nhà cung cấp** |
-| **Đường dẫn danh mục** của trang nguồn (breadcrumb, vd `Dụng cụ cầm tay > Kìm > Kìm cắt`) | → | **Danh mục** Sapo theo **bảng ghép `danh_muc.csv`** (xem mục "Gán danh mục nhiều cấp") |
-| Bạn nhập (tuỳ chọn): Danh mục chung, Tags | → | **Danh mục**, **Tags** |
+| Bạn nhập (tuỳ chọn): Danh mục, Tags | → | **Danh mục**, **Tags** |
 | – | → | Tự tick **"Sản phẩm yêu cầu vận chuyển"** |
 | Bạn chọn: **Trạng thái** Hiển thị / Ẩn (mặc định Hiển thị) | → | Mục **Trạng thái** (Hiển thị / Ẩn) |
 | Sản phẩm **"Liên hệ"** (không có giá) | → | Vẫn được đăng, ô **Giá** để nguyên 0 (đa số giao diện Sapo hiển thị "Liên hệ") |
@@ -115,33 +114,6 @@ python main.py --login               # chỉ đăng nhập Sapo
 
 ---
 
-### Gán danh mục nhiều cấp (tự động)
-Web nhà cung cấp có danh mục nhiều cấp, độ sâu khác nhau. Ứng dụng xác định danh mục **cho từng sản phẩm**:
-
-1. **Đọc đường dẫn danh mục (breadcrumb)** trên trang sản phẩm, vd `Dụng cụ cầm tay > Kìm > Kìm cắt`.
-   Trang sản phẩm không có → dùng đường dẫn của **trang danh mục** bạn dán link.
-2. **Tra bảng ghép `danh_muc.csv`** (nút **📂 Bảng ghép danh mục** để mở bằng Excel):
-
-   | Danh mục nguồn | Danh mục Sapo |
-   |---|---|
-   | Dụng cụ cầm tay > Kìm | Dụng cụ cầm tay, Kìm |
-   | Dụng cụ cầm tay > Kìm > Kìm cắt | Dụng cụ cầm tay, Kìm, Kìm cắt |
-   | Jobsite Enhancement > Storage | Lưu trữ dụng cụ |
-   | Tin tức | - |
-
-   - Tra **từ cấp sâu nhất lên**: chỉ cần khai báo cấp cha, mọi cấp con chưa có dòng riêng dùng theo cấp cha.
-   - Cột Sapo ghi **nhiều danh mục**, cách nhau dấu phẩy (đúng cách gán nhiều cấp trên Sapo). `-` = không gán.
-   - So khớp không phân biệt hoa/thường, có dấu/không dấu. Excel lưu bằng dấu `,` hay `;` đều đọc được.
-   - Xem mẫu: `danh_muc_mau.csv`.
-3. **Chưa có trong bảng** → ứng dụng gán **mọi cấp có tên trùng danh mục Sapo** (vd Dụng cụ cầm tay, Kìm, Kìm cắt)
-   và **tự ghi đường dẫn mới vào cuối bảng** (cột Sapo để trống) – bạn chỉ việc điền dần. Tắt bằng ô
-   "Tự gán danh mục theo trang nguồn".
-4. **Gán thủ công theo từng link**: trong ô link, viết `link | Danh mục A, Danh mục B`.
-5. Ô **Danh mục chung** trên giao diện vẫn áp dụng cho mọi sản phẩm của lần chạy. Kết quả là **gộp cả 4 nguồn, không trùng**.
-
-Lưu ý: danh mục phải **có sẵn trên Sapo** (tên khớp); danh mục chưa có sẽ được báo trong log để bạn tạo.
-Danh mục **tự động** của Sapo (vd theo nhà cung cấp "Irwin") Sapo tự gán, không cần khai báo.
-
 ### Phiên bản (thuộc tính) – lưu ý
 - Nhập **Tên thuộc tính phiên bản** (vd `Model`, `Kích thước`) → ứng dụng bấm lần lượt từng ô dưới QUY CÁCH
   trên trang nguồn để đọc **mã SP, giá, ảnh** của từng phiên bản (web Magento như Milwaukee còn đọc thẳng dữ liệu cấu hình).
@@ -226,7 +198,6 @@ Kiểm thử sau khi sửa mã (không cần Internet, chạy trên trang mô ph
 python tests/test_units.py        # từng hàm: đọc giá, chèn nhà cung cấp, khối lượng, chống mã độc...
 python tests/run_mock_test.py     # toàn bộ quy trình: cào → đăng Sapo (phiên bản, ảnh, trạng thái...)
 python tests/test_edge_cases.py   # tình huống xấu: mất mạng, chưa đăng nhập, ảnh lỗi, "Liên hệ", bấm Dừng...
-python tests/test_categories.py   # gán danh mục nhiều cấp: breadcrumb → bảng ghép → Sapo
 python tests/test_gui.py          # giao diện: tự điền ô, bấm Chạy, kiểm tra kết quả
 ```
 Mỗi lần cập nhật mã, GitHub chạy **toàn bộ** các bộ kiểm thử trên Windows với Microsoft Edge thật;

@@ -65,7 +65,7 @@ base = f"http://127.0.0.1:{PORT}"
 tmp = Path(tempfile.mkdtemp())
 cfg = load_config()
 cfg.update(sapo_admin_url=f"{base}/admin", output_dir=str(tmp / "out"), profile_dir=str(tmp / "profile"),
-           sapo_headless=True, delay_seconds=0, category_map_file=str(tmp / "danh_muc.csv"))
+           sapo_headless=True, delay_seconds=0)
 if os.environ.get("DT_BROWSER"):
     cfg["browser_executable"] = os.environ["DT_BROWSER"]
 

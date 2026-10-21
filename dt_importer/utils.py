@@ -14,8 +14,7 @@ def load_config(path=None):
     with open(path, encoding="utf-8") as f:
         cfg = json.load(f)
     # Đường dẫn tương đối tính từ thư mục ứng dụng
-    cfg.setdefault("category_map_file", "danh_muc.csv")
-    for key in ("profile_dir", "output_dir", "category_map_file"):
+    for key in ("profile_dir", "output_dir"):
         p = Path(cfg.get(key) or key)
         cfg[key] = str(p if p.is_absolute() else ROOT / p)
     return cfg
