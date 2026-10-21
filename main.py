@@ -5,12 +5,25 @@ Chạy dòng lệnh:   python main.py --url <link> --loai "Hộp đựng dụng 
 Đăng nhập Sapo:   python main.py --login
 """
 import argparse
+import json
+import os
 import queue
 import sys
 import threading
 from pathlib import Path
 
-from dt_importer.utils import ROOT, load_config, read_json, write_json
+from dt_importer.utils import FROZEN, ROOT, load_config, read_json, write_json
+
+if FROZEN:
+    # Trình duyệt Chromium đi kèm trong thư mục ms-playwright cạnh file .exe
+    _browsers = ROOT / "ms-playwright"
+    if _browsers.is_dir():
+        os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(_browsers))
+    # Bản không có cửa sổ dòng lệnh: ghi output ra file nhật ký
+    if sys.stdout is None or sys.stderr is None:
+        _log = open(ROOT / "nhat_ky.log", "a", encoding="utf-8", buffering=1)
+        sys.stdout = sys.stdout or _log
+        sys.stderr = sys.stderr or _log
 
 STATE_FILE = ROOT / "last_inputs.json"
 
@@ -63,15 +76,18 @@ def gui(config_path=None):
     frm.columnconfigure(1, weight=1)
 
     ttk.Label(frm, text="Link trang nguồn (mỗi dòng 1 link – trang sản phẩm hoặc trang danh mục):").grid(
-        row=0, column=0, columnspan=2, sticky="w")
+        row=2, column=0, columnspan=2, sticky="w")
     txt_urls = scrolledtext.ScrolledText(frm, height=6)
-    txt_urls.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(2, 8))
+    txt_urls.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(2, 8))
     txt_urls.insert("1.0", state.get("urls", ""))
 
     fields = {}
+    ttk.Label(frm, text="Địa chỉ Sapo Admin").grid(row=1, column=0, sticky="w")
+    var_sapo = tk.StringVar(value=cfg["sapo_admin_url"])
+    ttk.Entry(frm, textvariable=var_sapo).grid(row=1, column=1, sticky="ew", pady=3)
     rows = [("loai", "Loại sản phẩm (*)"), ("ncc", "Nhà cung cấp (*)"),
             ("danh_muc", "Danh mục Sapo (tuỳ chọn, cách nhau dấu phẩy)"), ("tags", "Tags (tuỳ chọn, cách nhau dấu phẩy)")]
-    for i, (key, label) in enumerate(rows, start=2):
+    for i, (key, label) in enumerate(rows, start=4):
         ttk.Label(frm, text=label).grid(row=i, column=0, sticky="w", pady=3)
         var = tk.StringVar(value=state.get(key, ""))
         ttk.Entry(frm, textvariable=var).grid(row=i, column=1, sticky="ew", pady=3)
@@ -82,7 +98,7 @@ def gui(config_path=None):
     var_force = tk.BooleanVar(value=False)
     var_img = tk.StringVar(value=state.get("image_mode", cfg.get("image_mode", "quycach")))
     opt = ttk.Frame(frm)
-    opt.grid(row=6, column=0, columnspan=2, sticky="w", pady=6)
+    opt.grid(row=8, column=0, columnspan=2, sticky="w", pady=6)
     ttk.Checkbutton(opt, text="Tự bấm Lưu trên Sapo", variable=var_save).pack(side="left", padx=(0, 12))
     ttk.Checkbutton(opt, text="Chỉ cào thử (không đăng)", variable=var_dry).pack(side="left", padx=(0, 12))
     ttk.Checkbutton(opt, text="Đăng lại cả mã đã đăng", variable=var_force).pack(side="left", padx=(0, 12))
@@ -91,10 +107,10 @@ def gui(config_path=None):
                  values=["quycach", "gallery", "both"]).pack(side="left")
 
     btns = ttk.Frame(frm)
-    btns.grid(row=7, column=0, columnspan=2, sticky="w", pady=4)
+    btns.grid(row=9, column=0, columnspan=2, sticky="w", pady=4)
     log_box = scrolledtext.ScrolledText(frm, height=20, state="disabled", font=("Consolas", 9))
-    log_box.grid(row=8, column=0, columnspan=2, sticky="nsew", pady=(6, 0))
-    frm.rowconfigure(8, weight=1)
+    log_box.grid(row=10, column=0, columnspan=2, sticky="nsew", pady=(6, 0))
+    frm.rowconfigure(10, weight=1)
 
     def log(msg):
         msgs.put(("log", msg))
@@ -139,8 +155,21 @@ def gui(config_path=None):
         stop.clear()
         threading.Thread(target=worker, args=(fn,), daemon=True).start()
 
+    def sync_sapo_url():
+        url = var_sapo.get().strip().rstrip("/")
+        if url and not url.endswith("/admin"):
+            url += "/admin"
+        if url and url != cfg["sapo_admin_url"]:
+            cfg["sapo_admin_url"] = url
+            path = Path(config_path) if config_path else ROOT / "config.json"
+            raw = read_json(path, {})
+            raw["sapo_admin_url"] = url
+            path.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+            log(f"✓ Đã lưu địa chỉ Sapo: {url}")
+
     def on_run():
         from dt_importer import pipeline
+        sync_sapo_url()
         urls = [u.strip() for u in txt_urls.get("1.0", "end").splitlines() if u.strip().startswith("http")]
         if not urls:
             messagebox.showwarning("Thiếu link", "Hãy dán ít nhất 1 link trang nguồn.")
@@ -158,6 +187,7 @@ def gui(config_path=None):
 
     def on_login():
         from dt_importer import pipeline
+        sync_sapo_url()
         start(lambda: pipeline.login_only(cfg, log))
 
     def on_continue():
@@ -177,7 +207,6 @@ def gui(config_path=None):
     btn_continue.pack(side="left", padx=(0, 8))
     btn_stop = ttk.Button(btns, text="⏹ Dừng", command=on_stop, state="disabled")
     btn_stop.pack(side="left")
-    ttk.Label(btns, text=f"   Sapo: {cfg['sapo_admin_url']}", foreground="#666").pack(side="left")
 
     pump()
     root.mainloop()

@@ -1,0 +1,49 @@
+name: Đóng gói bản Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Đóng gói (PyInstaller + Chromium)
+        shell: pwsh
+        run: ./packaging/build_windows.ps1 -SkipZip
+
+      - name: Chạy thử file .exe
+        shell: pwsh
+        run: ./packaging/smoke_test.ps1
+
+      - name: Nén ZIP
+        shell: pwsh
+        run: Compress-Archive -Path dist/DT-Sapo-Importer -DestinationPath dist/DT-Sapo-Importer-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DT-Sapo-Importer-windows
+          path: dist/DT-Sapo-Importer-windows.zip
+
+      - name: Đăng lên Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: D&T Sapo Importer v1.0.${{ github.run_number }} (Windows)
+          make_latest: true
+          body: |
+            **Bản Windows chạy ngay – không cần cài đặt.**
+            1. Tải `DT-Sapo-Importer-windows.zip` bên dưới, giải nén (chuột phải → Extract All).
+            2. Mở thư mục `DT-Sapo-Importer`, nhấp đúp `DT-Sapo-Importer.exe`.
+            3. Lần đầu: bấm "Đăng nhập Sapo (lần đầu)". Xem `HUONG_DAN_SU_DUNG.txt` trong thư mục.
+          files: dist/DT-Sapo-Importer-windows.zip

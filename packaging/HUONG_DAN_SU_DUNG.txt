@@ -1,0 +1,33 @@
+D&T SAPO IMPORTER – HƯỚNG DẪN NHANH (bản Windows chạy ngay, không cần cài đặt)
+==========================================================================
+
+YÊU CẦU: Windows 10/11 64-bit. Không cần cài Python hay trình duyệt.
+
+1. GIẢI NÉN
+   - Chuột phải file ZIP -> "Extract All..." -> chọn nơi lưu, vd D:\DT-Sapo-Importer
+   - KHÔNG chạy trực tiếp bên trong file ZIP.
+   - Không xoá thư mục "_internal" và "ms-playwright" (chứa thư viện và trình duyệt).
+
+2. MỞ ỨNG DỤNG
+   - Nhấp đúp DT-Sapo-Importer.exe
+   - Nếu Windows hiện "Windows protected your PC": bấm "More info" -> "Run anyway"
+     (do file chưa ký số, không phải virus).
+
+3. LẦN ĐẦU TIÊN
+   - Ô "Địa chỉ Sapo Admin": nhập địa chỉ cửa hàng, vd https://tencuahang.mysapo.net/admin
+   - Bấm "Đăng nhập Sapo (lần đầu)" -> đăng nhập trong cửa sổ trình duyệt hiện ra.
+     Phiên đăng nhập được lưu, lần sau không cần đăng nhập lại.
+
+4. SỬ DỤNG HẰNG NGÀY
+   - Dán link trang nguồn (mỗi dòng 1 link: trang sản phẩm hoặc trang danh mục).
+   - Nhập Loại sản phẩm, Nhà cung cấp (bắt buộc); Danh mục, Tags (tuỳ chọn).
+   - Bấm "Chạy" và theo dõi tiến trình.
+   - Lần đầu nên tick "Chỉ cào thử" để xem trước kết quả trong thư mục output\
+
+5. THƯ MỤC QUAN TRỌNG (nằm cạnh file .exe)
+   - output\           : dữ liệu, ảnh, lịch sử đã đăng, nhật ký lỗi
+   - browser_profile\  : phiên đăng nhập Sapo (xoá thư mục này để đăng nhập tài khoản khác)
+   - config.json       : cấu hình nâng cao (xem README.md)
+   - nhat_ky.log       : nhật ký kỹ thuật khi có sự cố
+
+CHUYỂN SANG MÁY KHÁC: sao chép nguyên thư mục (có thể bỏ browser_profile\ để đăng nhập lại).

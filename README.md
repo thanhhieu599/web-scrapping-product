@@ -31,7 +31,25 @@ Các mã model ở khối đó chỉ được dùng làm **tiêu đề cột** c
 
 ---
 
-## 2. Cài đặt (làm 1 lần)
+## 2. Bản Windows chạy ngay – KHÔNG cần cài đặt (dùng cho máy khách hàng)
+
+1. Vào trang **[Releases](https://github.com/thanhhieu599/web-scrapping-product/releases/latest)**,
+   tải file **`DT-Sapo-Importer-windows.zip`** (~250 MB, đã gồm Python, thư viện, trình duyệt Chromium).
+2. Chuột phải → **Extract All** → mở thư mục `DT-Sapo-Importer` → nhấp đúp **`DT-Sapo-Importer.exe`**.
+3. Nhập **Địa chỉ Sapo Admin** của cửa hàng (vd `https://tencuahang.mysapo.net/admin`) → bấm **Đăng nhập Sapo (lần đầu)**.
+
+Yêu cầu: Windows 10/11 64-bit. Nếu Windows báo *"Windows protected your PC"* → **More info → Run anyway**
+(file chưa ký số). Hướng dẫn ngắn cho khách nằm trong `HUONG_DAN_SU_DUNG.txt` trong thư mục giải nén.
+
+**Bản đóng gói được tạo tự động**: mỗi lần push lên `main`, GitHub Actions (`.github/workflows/build-windows.yml`)
+build trên máy Windows bằng PyInstaller, tải kèm Chromium, **chạy thử file .exe trên trang mô phỏng**,
+rồi đăng file ZIP lên Releases. Muốn build tay trên máy Windows có Python:
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
+# kết quả: dist\DT-Sapo-Importer-windows.zip
+```
+
+## 2b. Cài đặt từ mã nguồn (dành cho người phát triển)
 
 ### Windows
 1. Cài **Python 3.10 trở lên** tại <https://www.python.org/downloads/> – khi cài **tick ô "Add Python to PATH"**.

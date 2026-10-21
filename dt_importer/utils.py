@@ -1,9 +1,12 @@
 import json
 import re
+import sys
 import unicodedata
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# Bản đóng gói (.exe): dữ liệu/cấu hình nằm cạnh file .exe
+FROZEN = getattr(sys, "frozen", False)
+ROOT = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
 
 
 def load_config(path=None):
