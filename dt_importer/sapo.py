@@ -56,48 +56,77 @@ CHECKBOX_JS = r"""
 """
 
 EDITOR_JS = r"""
-(html) => {
+([html, label]) => {
+  // Điền vào ĐÚNG trình soạn thảo nằm ngay dưới nhãn (mặc định "Nội dung"),
+  // KHÔNG đụng tới trình soạn thảo "Mô tả ngắn" (có thể đã được tạo sẵn nhưng đang ẩn).
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const vis = e => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
+  const EDITOR_SEL = '.fr-box, .fr-element, .cke, .tox, .tox-tinymce, [contenteditable=true], iframe';
+  const lab = [...document.querySelectorAll('label, div, span, p, strong, h3, h4')]
+    .find(e => vis(e) && e.children.length === 0 && norm(e.textContent) === norm(label));
+  if (!lab) return { how: 'none', why: 'no-label' };
+  // trình soạn thảo ĐẦU TIÊN đứng sau nhãn (theo thứ tự trên trang)
+  let target = null;
+  for (let n = lab.parentElement, k = 0; !target && n && k < 6; n = n.parentElement, k++)
+    target = [...n.querySelectorAll(EDITOR_SEL)].find(e => vis(e) && (lab.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING));
+  if (!target) return { how: 'none', why: 'no-editor' };
+  const box = target.closest('.fr-box, .cke, .tox, .tox-tinymce') || target;
+  const inBox = el => !!el && (box === el || box.contains(el) || el.contains(box));
+  const fire = el => ['input', 'keyup', 'change', 'blur'].forEach(ev => el.dispatchEvent(new Event(ev, { bubbles: true })));
   try {
-    if (window.FroalaEditor && FroalaEditor.INSTANCES && FroalaEditor.INSTANCES.length) {
-      const ed = FroalaEditor.INSTANCES[0];
-      ed.html.set(html); ed.events.trigger('contentChanged'); if (ed.undo) ed.undo.saveStep();
-      return 'froala';
+    if (window.FroalaEditor && FroalaEditor.INSTANCES) {
+      const ed = FroalaEditor.INSTANCES.find(i => inBox(i.el) || (i.$box && inBox(i.$box[0])));
+      if (ed) { ed.html.set(html); ed.events.trigger('contentChanged'); if (ed.undo) ed.undo.saveStep(); return { how: 'froala' }; }
     }
   } catch (e) {}
   try {
     if (window.jQuery && jQuery.fn.froalaEditor) {
-      const el = jQuery('*').filter(function () { return jQuery(this).data('froala.editor'); }).first();
-      if (el.length) { el.froalaEditor('html.set', html); el.froalaEditor('events.trigger', 'contentChanged'); return 'froala-v2'; }
+      const el = jQuery('*').filter(function () { return jQuery(this).data('froala.editor') && inBox(this); }).first();
+      if (el.length) { el.froalaEditor('html.set', html); el.froalaEditor('events.trigger', 'contentChanged'); return { how: 'froala-v2' }; }
     }
   } catch (e) {}
   try {
     if (window.CKEDITOR && CKEDITOR.instances) {
-      for (const k in CKEDITOR.instances) { CKEDITOR.instances[k].setData(html); CKEDITOR.instances[k].updateElement(); return 'ckeditor'; }
+      const ed = Object.values(CKEDITOR.instances).find(i => i.container && inBox(i.container.$));
+      if (ed) { ed.setData(html); ed.updateElement(); return { how: 'ckeditor' }; }
     }
   } catch (e) {}
   try {
-    if (window.tinymce && tinymce.activeEditor) {
-      tinymce.activeEditor.setContent(html); tinymce.activeEditor.save(); tinymce.activeEditor.fire('change');
-      return 'tinymce';
+    if (window.tinymce && tinymce.editors) {
+      const ed = [...tinymce.editors].find(i => inBox(i.getContainer()));
+      if (ed) { ed.setContent(html); ed.save(); ed.fire('change'); return { how: 'tinymce' }; }
     }
   } catch (e) {}
-  const fire = el => ['input', 'keyup', 'change', 'blur'].forEach(ev => el.dispatchEvent(new Event(ev, { bubbles: true })));
-  const ce = [...document.querySelectorAll('[contenteditable=true], .fr-element')]
-      .filter(e => e.offsetHeight > 40)[0];
+  const ce = target.matches('[contenteditable=true]') ? target : box.querySelector('[contenteditable=true], .fr-element');
   if (ce) {
     ce.focus(); ce.innerHTML = html; fire(ce);
-    const box = ce.closest('.fr-box, .editor, form') || document;
-    const ta = box.querySelector('textarea');
+    const ta = box.parentElement && box.parentElement.querySelector('textarea');
     if (ta) { ta.value = html; fire(ta); }
-    return 'contenteditable';
+    return { how: 'contenteditable' };
   }
-  for (const f of document.querySelectorAll('iframe')) {
-    try {
-      const b = f.contentDocument && f.contentDocument.body;
-      if (b && (b.isContentEditable || f.contentDocument.designMode === 'on')) { b.innerHTML = html; fire(b); return 'iframe'; }
-    } catch (e) {}
+  const f = target.tagName === 'IFRAME' ? target : box.querySelector('iframe');
+  try {
+    const b = f && f.contentDocument && f.contentDocument.body;
+    if (b) { b.innerHTML = html; fire(b); return { how: 'iframe' }; }
+  } catch (e) {}
+  return { how: 'none', why: 'no-api' };
+}
+"""
+
+EDITOR_TEXT_JS = r"""
+(label) => {
+  // đọc chữ trong trình soạn thảo đứng sau nhãn (để kiểm tra / dọn ô Mô tả ngắn)
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const vis = e => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
+  const lab = [...document.querySelectorAll('label, div, span, p, strong, h3, h4')]
+    .find(e => e.children.length === 0 && norm(e.textContent) === norm(label));
+  if (!lab) return null;
+  for (let n = lab.parentElement, k = 0; n && k < 6; n = n.parentElement, k++) {
+    const ed = [...n.querySelectorAll('.fr-element, [contenteditable=true], .cke_editable')]
+      .find(e => lab.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING);
+    if (ed) { ed.setAttribute('data-dt-editor', norm(label)); return norm(ed.textContent); }
   }
-  return 'none';
+  return null;
 }
 """
 
@@ -297,9 +326,11 @@ class SapoUploader:
 
     # ---------------- các bước điền form ----------------
     def _set_content(self, html):
-        how = self.page.evaluate(EDITOR_JS, html)
+        """Đặc điểm + Thông số → CHỈ vào ô "Nội dung" chính, không vào "Mô tả ngắn"."""
+        res = self.page.evaluate(EDITOR_JS, [html, "Nội dung"])
+        how = res.get("how", "none")
         if how == "none":
-            # Phương án cuối: bật chế độ "Mã HTML" và dán mã
+            # Phương án cuối: nút "Mã HTML" ĐẦU TIÊN (thuộc ô Nội dung) và dán mã
             btn = self.page.locator('button:has-text("Mã HTML"), [title="Mã HTML"], [data-cmd="html"]').first
             if btn.count():
                 btn.click()
@@ -307,9 +338,19 @@ class SapoUploader:
                 ta.fill(html)
                 btn.click()
                 how = "code-view"
-        self.log(f"    · Nội dung: đã điền ({how})")
+        # kiểm tra: ô Nội dung có dữ liệu, ô Mô tả ngắn KHÔNG bị điền nhầm
+        probe = re.sub(r"<[^>]+>", " ", html)
+        probe = re.sub(r"\s+", " ", probe).strip().lower()[:25]
+        main_txt = self.page.evaluate(EDITOR_TEXT_JS, "Nội dung") or ""
+        short_txt = self.page.evaluate(EDITOR_TEXT_JS, "Mô tả ngắn") or ""
+        if probe and probe in short_txt:
+            self.page.evaluate("""() => { const e = document.querySelector('[data-dt-editor="mô tả ngắn"]');
+                if (e) { e.innerHTML = ''; ['input','keyup','change'].forEach(ev => e.dispatchEvent(new Event(ev, {bubbles:true}))); } }""")
+            self.log("    ! Đã xoá nội dung lỡ điền vào ô Mô tả ngắn")
+        ok = (not probe) or probe in main_txt or how in ("froala", "froala-v2", "ckeditor", "tinymce")
+        self.log(f"    · Nội dung (ô chính): đã điền ({how})" + ("" if ok else " – ! chưa kiểm tra được, hãy xem lại"))
         if how == "none":
-            self.log("    ! Không tìm thấy trình soạn thảo – cần dán nội dung thủ công.")
+            self.log(f"    ! Không tìm thấy trình soạn thảo Nội dung ({res.get('why')}) – cần dán nội dung thủ công.")
 
     def _upload_images(self, files):
         if not files:

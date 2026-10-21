@@ -72,6 +72,7 @@ check(d.get("cols") == ["Lưu trữ dụng cụ"], f"Danh mục {d.get('cols')}"
 check(len(d.get("files", [])) == 3, f"Ảnh quy cách: {d.get('files')}")
 c = d.get("content", "")
 check("Đặc điểm nổi bật" in c and "Bao gồm khay xốp" in c, "Có phần Đặc điểm")
+check(d.get("short", "x") == "", "Ô Mô tả ngắn để trống (không điền nhầm Đặc điểm/Thông số)")
 check("Thông số kỹ thuật" in c and "Khả năng chịu trọng lượng" in c, "Có bảng Thông số")
 check("BAO GỒM TRONG SẢN PHẨM" not in c and "(1)" not in c, "KHÔNG lấy khối 'Bao gồm trong sản phẩm'")
 img = tmp / "out" / "48-22-8450" / "images" / "01.jpg"

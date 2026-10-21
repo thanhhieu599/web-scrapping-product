@@ -6,7 +6,9 @@
 <label><input type="radio" name="vis" id="vis0"> Ẩn</label><br><a href="#">Đặt lịch hiển thị</a></div>
 <div class="card"><label>Tên sản phẩm</label><input id="name" placeholder="Nhập tên sản phẩm">
  <div>Nội dung</div><div class="editor"><button type="button" id="codebtn" title="Mã HTML">Mã HTML</button>
- <div contenteditable="true" class="fr-element" style="min-height:120px;border:1px solid #ccc"></div><textarea id="content" style="display:none"></textarea></div></div>
+ <div contenteditable="true" class="fr-element" style="min-height:120px;border:1px solid #ccc"></div><textarea id="content" style="display:none"></textarea></div>
+ <a href="#">Thêm mô tả ngắn</a>
+ <div>Mô tả ngắn</div><div class="editor2"><div contenteditable="true" class="fr-element" id="short" style="min-height:60px;border:1px solid #ccc"></div></div></div>
 <div class="card"><h3>Ảnh sản phẩm</h3><a href="#">Thêm ảnh sản phẩm</a><input type="file" multiple accept="image/*" style="display:none" id="imgs"><div id="thumbs"></div></div>
 <div class="card"><h3>Giá sản phẩm</h3>
  <div><label>Giá</label><div><span>₫</span><input id="price" value="0"></div></div>
@@ -53,7 +55,10 @@ function openEdit(i){$('mc').innerHTML=`<h4>Sửa phiên bản</h4><div><label>G
 function openImg(i){let sel=null;$('mc').innerHTML='<h4>Chọn ảnh phiên bản</h4><div id=th></div><button type=button id=iok>Xong</button>';
  urls.forEach((u,k)=>{const im=document.createElement('img');im.src=u;im.style.width='60px';im.onclick=()=>{sel=k;im.style.outline='2px solid red'};$('th').appendChild(im)});
  $('m').style.display='block';$('iok').onclick=()=>{if(sel!==null)V[i].image=sel;$('m').style.display='none';render()}}
-$('save').onclick=()=>{const d={visible:$('vis1').checked,name:$('name').value,content:$('content').value,files,price:$('price').value,vat:$('vat').checked,sku:$('sku').value,
+// Giả lập Froala: 2 trình soạn thảo, ô "Mô tả ngắn" đứng ĐẦU danh sách (dễ điền nhầm)
+const mk=el=>({el,html:{set(h){el.innerHTML=h;el.dispatchEvent(new Event('input',{bubbles:true}))},get(){return el.innerHTML}},events:{trigger(){}},undo:{saveStep(){}}});
+window.FroalaEditor={INSTANCES:[mk($('short')),mk(document.querySelector('.editor .fr-element'))]};
+$('save').onclick=()=>{const d={short:$('short').innerHTML,visible:$('vis1').checked,name:$('name').value,content:$('content').value,files,price:$('price').value,vat:$('vat').checked,sku:$('sku').value,
  ship:$('ship').checked,weight:$('weight').value,type:$('type').value,vendor:$('vendor').value,cols:[...chosen],tags,attr:$('attrname').value,variants:V.map(v=>({value:v.value,price:v.price,sku:v.sku,image:v.image}))};
  sessionStorage.setItem('saved',JSON.stringify(d));location.href='/admin/products/123.html'};
 </script></body></html>
