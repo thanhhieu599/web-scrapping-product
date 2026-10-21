@@ -27,6 +27,7 @@ Chỉ cần dán **link trang nguồn** (trang 1 sản phẩm hoặc cả trang 
 | Bạn nhập (tuỳ chọn): Danh mục, Tags | → | **Danh mục**, **Tags** |
 | – | → | Tự tick **"Sản phẩm yêu cầu vận chuyển"** |
 | Bạn chọn: **Trạng thái** Hiển thị / Ẩn (mặc định Hiển thị) | → | Mục **Trạng thái** (Hiển thị / Ẩn) |
+| Sản phẩm **"Liên hệ"** (không có giá) | → | Vẫn được đăng, ô **Giá** để nguyên 0 (đa số giao diện Sapo hiển thị "Liên hệ") |
 
 **Không lấy**: khối "BAO GỒM TRONG SẢN PHẨM" và dòng `48-22-xxxx (1)` bên dưới (hình 3).
 Các mã model ở khối đó chỉ được dùng làm **tiêu đề cột** cho bảng thông số (để biết cột nào là model nào).
@@ -192,10 +193,15 @@ tests/run_mock_test.py   # kiểm thử tự động trên trang giả lập
 | Ảnh bị nhỏ / mờ | Đổi `image_mode` sang `both` hoặc `gallery` |
 | Muốn đăng nhập lại tài khoản Sapo khác | Xoá thư mục `browser_profile/` rồi bấm "Đăng nhập Sapo" |
 
-Kiểm thử nhanh sau khi sửa mã (không cần Internet):
+Kiểm thử sau khi sửa mã (không cần Internet, chạy trên trang mô phỏng):
 ```bash
-python tests/run_mock_test.py
+python tests/test_units.py        # từng hàm: đọc giá, chèn nhà cung cấp, khối lượng, chống mã độc...
+python tests/run_mock_test.py     # toàn bộ quy trình: cào → đăng Sapo (phiên bản, ảnh, trạng thái...)
+python tests/test_edge_cases.py   # tình huống xấu: mất mạng, chưa đăng nhập, ảnh lỗi, "Liên hệ", bấm Dừng...
+python tests/test_gui.py          # giao diện: tự điền ô, bấm Chạy, kiểm tra kết quả
 ```
+Mỗi lần cập nhật mã, GitHub chạy **toàn bộ** các bộ kiểm thử trên Windows với Microsoft Edge thật;
+chỉ khi tất cả đạt mới đóng gói và phát hành bản mới.
 
 ---
 

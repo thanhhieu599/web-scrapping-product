@@ -115,6 +115,11 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                         rec["status"] = "scraped"
                     else:
                         sapo_url = uploader.create_product(payload, opts)
+                        if not sapo_url:
+                            log("  – Sản phẩm CHƯA được lưu trên Sapo (không ghi vào lịch sử, lần sau sẽ đăng lại)")
+                            rec["status"] = "not_saved"
+                            results.append(rec)
+                            continue
                         rec.update(status="created", sapo_url=sapo_url)
                         if sku:
                             history[sku] = {"sapo_url": sapo_url, "source": url,
@@ -138,7 +143,8 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
 
     ok = sum(r["status"] in ("created", "scraped") for r in results)
     err = sum(r["status"] == "error" for r in results)
-    log(f"\n✅ Hoàn tất: {ok} thành công, {err} lỗi, {len(results) - ok - err} bỏ qua.")
+    ns = sum(r["status"] == "not_saved" for r in results)
+    log(f"\n✅ Hoàn tất: {ok} thành công, {err} lỗi, {ns} chưa lưu, {len(results) - ok - err - ns} bỏ qua.")
     write_json(out_dir / f"ket-qua-{datetime.now():%Y%m%d-%H%M%S}.json", results)
     return results
 

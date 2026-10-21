@@ -470,6 +470,8 @@ class SapoUploader:
 
         self._set_status(opts.get("visible", True))
         name_input = self._by_placeholder(self.NAME_PH) or self._by_label(["Tên sản phẩm"], "name")
+        if not name_input:
+            raise SapoError("Không tìm thấy ô 'Tên sản phẩm' trên form Sapo (giao diện Sapo có thể đã đổi)")
         self._type(name_input, p["name"])
         self.log(f"    · Tên: {p['name']}")
 
@@ -522,13 +524,22 @@ class SapoUploader:
                 self.log(f"    ! Đã lưu form Sapo vào output/logs/sapo-form-{stamp}.html (gửi file này để chỉnh công cụ)")
             self.wait_user("Phiên bản chưa đầy đủ (xem log). Hãy hoàn tất phần Thuộc tính trên trình duyệt "
                            "rồi bấm Lưu, sau đó bấm Tiếp tục.")
-            return self.page.url
+            return self._saved_url()
         if opts.get("auto_save", True):
             url = self._save()
             self.log(f"    ✓ Đã lưu: {url}")
             return url
         self.wait_user("Kiểm tra form trên trình duyệt rồi tự bấm Lưu. Xong thì bấm Tiếp tục.")
-        return self.page.url
+        return self._saved_url()
+
+    def _saved_url(self):
+        """Sau khi người dùng tự xử lý: còn ở trang 'tạo mới' nghĩa là CHƯA lưu → trả None."""
+        try:
+            self.page.wait_for_timeout(500)
+            url = self.page.url
+        except Exception:
+            return None
+        return None if "/products/create" in url else url
 
     # ---------------- phiên bản (thuộc tính) ----------------
     def _modal(self, timeout=5000):

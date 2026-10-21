@@ -18,6 +18,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Đặt mã hoá UTF-8 cho log tiếng Việt
+        run: echo "PYTHONIOENCODING=utf-8" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Cài thư viện để kiểm thử
+        run: python -m pip install -r requirements.txt
+
+      - name: Kiểm thử từng hàm
+        run: python tests/test_units.py
+
+      - name: Kiểm thử toàn bộ quy trình (Edge thật trên Windows + trang mô phỏng)
+        run: python tests/run_mock_test.py
+
+      - name: Kiểm thử tình huống xấu (mất mạng, chưa đăng nhập, ảnh lỗi...)
+        run: python tests/test_edge_cases.py
+
+      - name: Kiểm thử giao diện
+        run: python tests/test_gui.py
+
       - name: Đóng gói (PyInstaller + Chromium)
         shell: pwsh
         run: ./packaging/build_windows.ps1 -SkipZip

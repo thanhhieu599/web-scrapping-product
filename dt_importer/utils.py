@@ -24,8 +24,10 @@ def parse_vnd(text):
     """'2.940.000 ₫' -> 2940000. Trả None nếu không đọc được."""
     if text is None:
         return None
+    if isinstance(text, bool):
+        return None
     if isinstance(text, (int, float)):
-        return int(text)
+        return int(round(text))
     s = str(text)
     # bỏ phần thập phân kiểu ',00' hoặc '.00' ở cuối (nếu có)
     s = re.sub(r"[.,]00\s*(₫|đ|vnđ|vnd)?\s*$", r" \1", s, flags=re.I)
@@ -79,6 +81,8 @@ def name_with_vendor(name, vendor):
         return name
     words = name.split()
     for i, w in enumerate(words):
-        if i > 0 and _CODE_TOKEN.match(w) and not _STANDARD.match(w):
+        # bỏ qua ký hiệu tiêu chuẩn (IP65, EN388...) và cấp độ đi ngay sau nó (vd EN388 4X43C, EN ISO 20345 S3)
+        after_std = i > 0 and (_STANDARD.match(words[i - 1]) or words[i - 1].upper() in ("EN", "ISO", "ANSI", "CẤP", "LEVEL"))
+        if i > 0 and _CODE_TOKEN.match(w) and not _STANDARD.match(w) and not after_std:
             return " ".join(words[:i] + [vendor] + words[i:])
     return f"{name} {vendor}"

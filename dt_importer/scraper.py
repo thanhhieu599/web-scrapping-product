@@ -453,11 +453,18 @@ class Scraper:
             self.page.wait_for_load_state("networkidle", timeout=15000)
         except Exception:
             pass
-        # cuộn để ảnh lazy-load hiện ra
-        self.page.evaluate("""async () => {
-            for (let y = 0; y < document.body.scrollHeight; y += 700) { window.scrollTo(0, y); await new Promise(r => setTimeout(r, 120)); }
-            window.scrollTo(0, 0);
-        }""")
+        # cuộn để ảnh lazy-load hiện ra (tối đa 40 lần, tránh trang "cuộn vô hạn")
+        try:
+            self.page.evaluate("""async () => {
+                for (let y = 0, k = 0; k < 40 && y < document.body.scrollHeight; y += 700, k++) {
+                    window.scrollTo(0, y); await new Promise(r => setTimeout(r, 120)); }
+                window.scrollTo(0, 0);
+            }""")
+        except Exception:      # trang tự chuyển hướng trong lúc cuộn → đợi trang mới ổn định
+            try:
+                self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+            except Exception:
+                pass
         self.page.wait_for_timeout(500)
 
     def scrape_current(self):
@@ -467,8 +474,15 @@ class Scraper:
 
     @staticmethod
     def is_product(data):
-        return bool(data.get("name") and data["found"].get("price") and
-                    (data.get("sku") or data["found"].get("specs") or data["found"].get("features")))
+        """Trang sản phẩm: có tên và (có giá + mã/thông số/đặc điểm) – hoặc sản phẩm 'Liên hệ'
+        (không có giá) nhưng có mã SP và có Đặc điểm/Thông số."""
+        f = data.get("found", {})
+        detail = f.get("specs") or f.get("features")
+        if not data.get("name"):
+            return False
+        if f.get("price"):
+            return bool(data.get("sku") or detail)
+        return bool(data.get("sku") and detail)
 
     def scrape_variants(self, base_url, base):
         """Đọc từng phiên bản dưới QUY CÁCH: nhãn, mã SP, giá, ảnh. Trả [] nếu không có."""
@@ -528,9 +542,13 @@ class Scraper:
             if not v["sku"] or counts[v["sku"]] > 1:
                 v["sku"] = v["label"] or code_from_url(v["image"]) or v["sku"]
         for v in variants:
-            v["value"] = v["sku"] or v["label"]
-            if v["price"] is None:
-                v["price"] = base.get("price")
+            v["value"] = (v["sku"] or v["label"] or "").strip()
+            v["price"] = parse_vnd(v["price"]) if v["price"] not in (None, "") else base.get("price")
+        # (4) giá trị rỗng / trùng → không tạo phiên bản (tránh thuộc tính sai trên Sapo)
+        vals = [v["value"] for v in variants]
+        if not all(vals) or len(set(vals)) != len(vals):
+            self.log(f"    ! Không xác định được mã riêng cho từng phiên bản ({vals}) → bỏ qua phần phiên bản")
+            return []
         return variants
 
     def scrape_url(self, url):
