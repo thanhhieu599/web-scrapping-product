@@ -40,6 +40,17 @@ jobs:
       - name: Kiểm thử giao diện
         run: python tests/test_gui.py
 
+      - name: Kiểm thử trình duyệt có cửa sổ (không cảnh báo, hộp cát bật)
+        run: python tests/test_browser.py
+
+      - name: Lưu ảnh chụp màn hình kiểm thử
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anh-kiem-thu
+          path: tests/artifacts/
+          if-no-files-found: ignore
+
       - name: Đóng gói (PyInstaller + Chromium)
         shell: pwsh
         run: ./packaging/build_windows.ps1 -SkipZip
