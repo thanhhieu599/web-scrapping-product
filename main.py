@@ -33,11 +33,12 @@ def split_list(text):
 
 
 def build_opts(product_type, vendor, collections, tags, auto_save, dry_run, force=False,
-               variant_attr="", vendor_in_name=True):
+               variant_attr="", vendor_in_name=True, visible=True):
     return {"product_type": product_type.strip(), "vendor": vendor.strip(),
             "collections": split_list(collections), "tags": split_list(tags),
             "auto_save": auto_save, "dry_run": dry_run, "force": force,
-            "variant_attr": (variant_attr or "").strip(), "vendor_in_name": vendor_in_name}
+            "variant_attr": (variant_attr or "").strip(), "vendor_in_name": vendor_in_name,
+            "visible": visible}
 
 
 # ---------------------------------------------------------------- CLI
@@ -55,7 +56,8 @@ def cli(args):
         sys.exit("Cần --url hoặc --file")
     auto_save = cfg.get("auto_save", True) and not args.no_save
     opts = build_opts(args.loai or "", args.ncc or "", args.danh_muc or "", args.tags or "",
-                      auto_save, args.dry_run, args.force, args.thuoc_tinh or "", not args.khong_chen_ncc)
+                      auto_save, args.dry_run, args.force, args.thuoc_tinh or "", not args.khong_chen_ncc,
+                      not args.an)
     pipeline.run(urls, opts, cfg)
 
 
@@ -72,7 +74,7 @@ def gui(config_path=None):
 
     root = tk.Tk()
     root.title("D&T – Chép sản phẩm nhà cung cấp → Sapo")
-    root.geometry("1000x760")
+    root.geometry("1120x760")
     frm = ttk.Frame(root, padding=12)
     frm.pack(fill="both", expand=True)
     frm.columnconfigure(1, weight=1)
@@ -100,6 +102,7 @@ def gui(config_path=None):
     var_dry = tk.BooleanVar(value=False)
     var_force = tk.BooleanVar(value=False)
     var_vname = tk.BooleanVar(value=state.get("vendor_in_name", True))
+    var_status = tk.StringVar(value=state.get("status", "Hiển thị"))
     var_img = tk.StringVar(value=state.get("image_mode", cfg.get("image_mode", "quycach")))
     opt = ttk.Frame(frm)
     opt.grid(row=9, column=0, columnspan=2, sticky="w", pady=6)
@@ -107,6 +110,9 @@ def gui(config_path=None):
     ttk.Checkbutton(opt, text="Chỉ cào thử (không đăng)", variable=var_dry).pack(side="left", padx=(0, 12))
     ttk.Checkbutton(opt, text="Đăng lại cả mã đã đăng", variable=var_force).pack(side="left", padx=(0, 12))
     ttk.Checkbutton(opt, text="Chèn nhà cung cấp vào tên", variable=var_vname).pack(side="left", padx=(0, 12))
+    ttk.Label(opt, text="Trạng thái:").pack(side="left")
+    ttk.Combobox(opt, textvariable=var_status, width=9, state="readonly",
+                 values=["Hiển thị", "Ẩn"]).pack(side="left", padx=(2, 12))
     ttk.Label(opt, text="Ảnh:").pack(side="left")
     ttk.Combobox(opt, textvariable=var_img, width=10, state="readonly",
                  values=["quycach", "gallery", "both"]).pack(side="left")
@@ -184,11 +190,12 @@ def gui(config_path=None):
                 return
         st = {k: v.get() for k, v in fields.items()}
         st.update(urls=txt_urls.get("1.0", "end").strip(), auto_save=var_save.get(), image_mode=var_img.get(),
-                  vendor_in_name=var_vname.get())
+                  vendor_in_name=var_vname.get(), status=var_status.get())
         write_json(STATE_FILE, st)
         run_cfg = dict(cfg, image_mode=var_img.get())
         opts = build_opts(st["loai"], st["ncc"], st["danh_muc"], st["tags"],
-                          var_save.get(), var_dry.get(), var_force.get(), st["thuoc_tinh"], var_vname.get())
+                          var_save.get(), var_dry.get(), var_force.get(), st["thuoc_tinh"], var_vname.get(),
+                          var_status.get() != "Ẩn")
         start(lambda: pipeline.run(urls, opts, run_cfg, log, wait_user, stop.is_set))
 
     def on_login():
@@ -227,6 +234,7 @@ def main():
     ap.add_argument("--danh-muc", dest="danh_muc", help="Danh mục Sapo, cách nhau dấu phẩy")
     ap.add_argument("--tags", help="Tags, cách nhau dấu phẩy")
     ap.add_argument("--thuoc-tinh", dest="thuoc_tinh", help="Tên thuộc tính để tạo phiên bản từ các ô Quy cách (vd: Model)")
+    ap.add_argument("--an", action="store_true", help="Đăng sản phẩm ở trạng thái Ẩn (mặc định: Hiển thị)")
     ap.add_argument("--khong-chen-ncc", dest="khong_chen_ncc", action="store_true", help="Không chèn nhà cung cấp vào tên")
     ap.add_argument("--dry-run", action="store_true", help="Chỉ cào và lưu vào output/, không đăng Sapo")
     ap.add_argument("--no-save", action="store_true", help="Điền form nhưng không bấm Lưu (tự kiểm tra)")

@@ -199,6 +199,29 @@ VARIANT_ROWS_JS = r"""
 """
 
 
+STATUS_JS = r"""
+(want) => {
+  // Mục "Trạng thái": chọn ô Hiển thị / Ẩn
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const vis = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+  const head = [...document.querySelectorAll('h1,h2,h3,h4,h5,label,span,div,p,strong')]
+    .find(e => vis(e) && e.children.length === 0 && norm(e.textContent) === 'trạng thái');
+  let card = head;
+  for (let k = 0; card && k < 6 && card.querySelectorAll('input[type=radio]').length < 2; k++) card = card.parentElement;
+  if (!card) return { found: false };
+  for (const r of card.querySelectorAll('input[type=radio]')) {
+    const lab = r.closest('label') || (r.id && document.querySelector(`label[for="${r.id}"]`)) || r.parentElement;
+    if (norm(lab.textContent) === norm(want)) {
+      document.querySelectorAll('[data-dt-status]').forEach(e => e.removeAttribute('data-dt-status'));
+      lab.setAttribute('data-dt-status', 'label'); r.setAttribute('data-dt-status', 'radio');
+      return { found: true, checked: r.checked };
+    }
+  }
+  return { found: false };
+}
+"""
+
+
 class SapoError(Exception):
     pass
 
@@ -331,6 +354,19 @@ class SapoUploader:
                 self.page.locator(f'[data-dt-mark="{mark}"]').click(force=True)
         self.log(f"    · Tick '{text}': {'✓' if want else '✗'}")
 
+    def _set_status(self, visible):
+        want = "Hiển thị" if visible else "Ẩn"
+        st = self.page.evaluate(STATUS_JS, want)
+        if not st.get("found"):
+            self.log(f"    ! Không tìm thấy ô Trạng thái '{want}'")
+            return
+        if not st["checked"]:
+            self.page.locator('[data-dt-status="label"]').first.click()
+            if not self.page.evaluate(STATUS_JS, want).get("checked"):
+                self.page.locator('[data-dt-status="radio"]').first.click(force=True)
+        ok = self.page.evaluate(STATUS_JS, want).get("checked")
+        self.log(f"    · Trạng thái: {want}" + ("" if ok else " (! chưa chọn được)"))
+
     def _fill_combo(self, placeholders, labels, value, what):
         if not value:
             return
@@ -391,6 +427,7 @@ class SapoUploader:
         if not self._wait_form(30000):
             self.ensure_login()
 
+        self._set_status(opts.get("visible", True))
         name_input = self._by_placeholder(self.NAME_PH) or self._by_label(["Tên sản phẩm"], "name")
         self._type(name_input, p["name"])
         self.log(f"    · Tên: {p['name']}")

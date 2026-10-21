@@ -2,6 +2,8 @@
 <style>.card{border:1px solid #ddd;margin:8px;padding:8px} .chk input{display:none} .chk .box{display:inline-block;width:12px;height:12px;border:1px solid #333}
 .chk input:checked + .box{background:#06c} #dd{display:none;border:1px solid #ccc} #dd li{cursor:pointer}</style></head><body>
 <h1>Thêm mới sản phẩm</h1>
+<div class="card"><h3>Trạng thái</h3><label><input type="radio" name="vis" id="vis1" checked> Hiển thị</label><br>
+<label><input type="radio" name="vis" id="vis0"> Ẩn</label><br><a href="#">Đặt lịch hiển thị</a></div>
 <div class="card"><label>Tên sản phẩm</label><input id="name" placeholder="Nhập tên sản phẩm">
  <div>Nội dung</div><div class="editor"><button type="button" id="codebtn" title="Mã HTML">Mã HTML</button>
  <div contenteditable="true" class="fr-element" style="min-height:120px;border:1px solid #ccc"></div><textarea id="content" style="display:none"></textarea></div></div>
@@ -51,7 +53,7 @@ function openEdit(i){$('mc').innerHTML=`<h4>Sửa phiên bản</h4><div><label>G
 function openImg(i){let sel=null;$('mc').innerHTML='<h4>Chọn ảnh phiên bản</h4><div id=th></div><button type=button id=iok>Xong</button>';
  urls.forEach((u,k)=>{const im=document.createElement('img');im.src=u;im.style.width='60px';im.onclick=()=>{sel=k;im.style.outline='2px solid red'};$('th').appendChild(im)});
  $('m').style.display='block';$('iok').onclick=()=>{if(sel!==null)V[i].image=sel;$('m').style.display='none';render()}}
-$('save').onclick=()=>{const d={name:$('name').value,content:$('content').value,files,price:$('price').value,vat:$('vat').checked,sku:$('sku').value,
+$('save').onclick=()=>{const d={visible:$('vis1').checked,name:$('name').value,content:$('content').value,files,price:$('price').value,vat:$('vat').checked,sku:$('sku').value,
  ship:$('ship').checked,weight:$('weight').value,type:$('type').value,vendor:$('vendor').value,cols:[...chosen],tags,attr:$('attrname').value,variants:V.map(v=>({value:v.value,price:v.price,sku:v.sku,image:v.image}))};
  sessionStorage.setItem('saved',JSON.stringify(d));location.href='/admin/products/123.html'};
 </script></body></html>

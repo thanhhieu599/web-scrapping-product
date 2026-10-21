@@ -26,6 +26,7 @@ Chỉ cần dán **link trang nguồn** (trang 1 sản phẩm hoặc cả trang 
 | Bạn nhập: Nhà cung cấp | → | **Nhà cung cấp** |
 | Bạn nhập (tuỳ chọn): Danh mục, Tags | → | **Danh mục**, **Tags** |
 | – | → | Tự tick **"Sản phẩm yêu cầu vận chuyển"** |
+| Bạn chọn: **Trạng thái** Hiển thị / Ẩn (mặc định Hiển thị) | → | Mục **Trạng thái** (Hiển thị / Ẩn) |
 
 **Không lấy**: khối "BAO GỒM TRONG SẢN PHẨM" và dòng `48-22-xxxx (1)` bên dưới (hình 3).
 Các mã model ở khối đó chỉ được dùng làm **tiêu đề cột** cho bảng thông số (để biết cột nào là model nào).
@@ -103,6 +104,7 @@ python main.py --file urls.txt --loai "Găng tay" --ncc "TOWA"
 
 python main.py --url ... --thuoc-tinh "Model"   # tạo phiên bản từ các ô Quy cách
 python main.py --url ... --khong-chen-ncc       # không chèn nhà cung cấp vào tên
+python main.py --url ... --an                   # đăng ở trạng thái Ẩn (để duyệt lại trước khi mở bán)
 python main.py --url ... --dry-run   # chỉ cào, không đăng
 python main.py --url ... --no-save   # điền form nhưng không bấm Lưu
 python main.py --url ... --force     # đăng lại mã đã đăng
