@@ -1,0 +1,34 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Thêm mới sản phẩm</title>
+<style>.card{border:1px solid #ddd;margin:8px;padding:8px} .chk input{display:none} .chk .box{display:inline-block;width:12px;height:12px;border:1px solid #333}
+.chk input:checked + .box{background:#06c} #dd{display:none;border:1px solid #ccc} #dd li{cursor:pointer}</style></head><body>
+<h1>Thêm mới sản phẩm</h1>
+<div class="card"><label>Tên sản phẩm</label><input id="name" placeholder="Nhập tên sản phẩm">
+ <div>Nội dung</div><div class="editor"><button type="button" id="codebtn" title="Mã HTML">Mã HTML</button>
+ <div contenteditable="true" class="fr-element" style="min-height:120px;border:1px solid #ccc"></div><textarea id="content" style="display:none"></textarea></div></div>
+<div class="card"><h3>Ảnh sản phẩm</h3><a href="#">Thêm ảnh sản phẩm</a><input type="file" multiple accept="image/*" style="display:none" id="imgs"><div id="thumbs"></div></div>
+<div class="card"><h3>Giá sản phẩm</h3>
+ <div><label>Giá</label><div><span>₫</span><input id="price" value="0"></div></div>
+ <div><label>Giá so sánh</label><input id="cmp"></div>
+ <label class="chk"><input type="checkbox" id="vat"><span class="box"></span> <span>Giá đã bao gồm VAT</span></label></div>
+<div class="card"><h3>Kho hàng</h3><div><label>Mã sản phẩm / SKU</label><input id="sku"></div><div><label>Mã vạch / Barcode (ISBN, UPC, v.v...)</label><input id="barcode"></div></div>
+<div class="card"><h3>Vận chuyển</h3><label class="chk"><input type="checkbox" id="ship"><span class="box"></span> Sản phẩm yêu cầu vận chuyển</label>
+ <div><span>KHỐI LƯỢNG</span><p>Được dùng để tính phí vận chuyển ở trang thanh toán</p><input id="weight" value="0"><select><option>g</option></select></div></div>
+<div class="card"><h3>Phân loại</h3><div>Loại</div><input id="type" placeholder="Nhập loại sản phẩm">
+ <ul id="dd"><li>Găng tay</li><li>Hộp đựng dụng cụ</li></ul>
+ <div>Nhà cung cấp</div><input id="vendor" placeholder="Nhập nhà cung cấp">
+ <div>Danh mục</div><input id="colq" placeholder="Tìm kiếm danh mục"><div id="cols"></div>
+ <div>Tags</div><input id="tagq" placeholder="Nhập tag cho sản phẩm"><div id="tags"></div></div>
+<button type="button" id="save">Lưu</button>
+<script>
+const $=id=>document.getElementById(id);
+$('type').addEventListener('input',()=>{$('dd').style.display='block'});
+document.querySelectorAll('#dd li').forEach(li=>li.onclick=()=>{$('type').value=li.textContent;$('dd').style.display='none'});
+$('colq').addEventListener('input',e=>{const v=e.target.value.toLowerCase();$('cols').innerHTML=['PPE','Lưu trữ dụng cụ','Milwaukee'].filter(c=>c.toLowerCase().includes(v)).map(c=>`<label><input type=checkbox class=col value="${c}">${c}</label>`).join('')});
+const chosen=new Set();document.addEventListener('change',e=>{if(e.target.classList.contains('col'))e.target.checked?chosen.add(e.target.value):chosen.delete(e.target.value)});
+const tags=[];$('tagq').addEventListener('keydown',e=>{if(e.key==='Enter'){tags.push(e.target.value);e.target.value='';$('tags').textContent=tags.join(',')}});
+let files=[];$('imgs').addEventListener('change',e=>{files=files.concat([...e.target.files].map(f=>f.name));$('thumbs').textContent=files.join(',')});
+document.querySelector('.fr-element').addEventListener('input',e=>{$('content').value=e.target.innerHTML});
+$('save').onclick=()=>{const d={name:$('name').value,content:$('content').value,files,price:$('price').value,vat:$('vat').checked,sku:$('sku').value,
+ ship:$('ship').checked,weight:$('weight').value,type:$('type').value,vendor:$('vendor').value,cols:[...chosen],tags};
+ sessionStorage.setItem('saved',JSON.stringify(d));location.href='/admin/products/123.html'};
+</script></body></html>

@@ -1,0 +1,133 @@
+"""Pipeline: URL nguồn → cào dữ liệu → lưu bản ghi + ảnh → đăng lên Sapo."""
+import time
+import traceback
+from datetime import datetime
+from pathlib import Path
+
+from playwright.sync_api import sync_playwright
+
+from .content import build_content_html
+from .sapo import SapoUploader
+from .scraper import Scraper, pick_images, product_folder, weight_grams
+from .utils import format_vnd, read_json, write_json
+
+
+def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
+    """
+    urls : list URL trang sản phẩm hoặc trang danh mục của nhà cung cấp
+    opts : product_type, vendor, collections(list), tags(list), auto_save, dry_run, force
+    Trả về list kết quả từng sản phẩm.
+    """
+    out_dir = Path(cfg["output_dir"])
+    out_dir.mkdir(parents=True, exist_ok=True)
+    history_path = out_dir / "history.json"
+    history = read_json(history_path, {})
+    results = []
+    stopped = lambda: bool(stop_flag and stop_flag())
+
+    with sync_playwright() as pw:
+        kw = {"headless": True}
+        if cfg.get("browser_channel"):
+            kw["channel"] = cfg["browser_channel"]
+        if cfg.get("browser_executable"):
+            kw["executable_path"] = cfg["browser_executable"]
+        browser = pw.chromium.launch(**kw)
+        scraper = Scraper(browser, cfg, log)
+        uploader = None
+        try:
+            # 1) Gom danh sách URL sản phẩm
+            product_urls, cache = [], {}
+            for u in urls:
+                if stopped():
+                    break
+                log(f"🔎 Đọc nguồn: {u}")
+                try:
+                    links, data = scraper.expand(u)
+                except Exception as e:
+                    log(f"  ✗ Không mở được: {e}")
+                    continue
+                cache.update(data)
+                product_urls += [l for l in links if l not in product_urls]
+            log(f"📦 Tổng cộng {len(product_urls)} link sản phẩm cần xử lý.")
+
+            if not opts.get("dry_run"):
+                uploader = SapoUploader(pw, cfg, log, wait_user)
+                uploader.ensure_login()
+
+            # 2) Từng sản phẩm
+            for idx, url in enumerate(product_urls, 1):
+                if stopped():
+                    log("⏹ Đã dừng theo yêu cầu.")
+                    break
+                log(f"\n[{idx}/{len(product_urls)}] {url}")
+                rec = {"url": url, "status": "error"}
+                try:
+                    data = cache.get(url) or scraper.scrape_url(url)
+                    if not Scraper.is_product(data):
+                        log("  – Bỏ qua: không phải trang sản phẩm")
+                        rec["status"] = "skipped"
+                        results.append(rec)
+                        continue
+                    sku = data.get("sku") or ""
+                    log(f"  • {data['name']} | Mã: {sku or '(không có)'} | Giá: {format_vnd(data.get('price')) or '(không có)'}")
+                    log(f"  • Đặc điểm: {len(data['features'])} dòng | Thông số: {len(data['spec']['rows'])} dòng"
+                        f" | Ảnh quy cách: {len(data['variant_images'])} | Ảnh gallery: {len(data['gallery_images'])}")
+                    if sku and sku in history and cfg.get("skip_existing_sku", True) and not opts.get("force"):
+                        log(f"  – Bỏ qua: mã {sku} đã đăng trước đó ({history[sku].get('sapo_url')})")
+                        rec.update(status="exists", sku=sku)
+                        results.append(rec)
+                        continue
+
+                    folder = product_folder(out_dir, data)
+                    imgs = pick_images(data, cfg.get("image_mode", "quycach"))
+                    files = scraper.download_images(imgs, folder / "images", int(cfg.get("max_images", 15)))
+                    html = build_content_html(data)
+                    weight = weight_grams(data) if cfg.get("fill_weight", True) else None
+                    payload = {"name": data["name"], "sku": sku, "price": data.get("price"),
+                               "content_html": html, "image_files": files, "weight_g": weight}
+                    write_json(folder / "product.json", {**data, "weight_g": weight, "image_files": files})
+                    (folder / "noi_dung.html").write_text(html, encoding="utf-8")
+                    rec.update(sku=sku, name=data["name"], folder=str(folder))
+
+                    if opts.get("dry_run"):
+                        log(f"  ✓ Đã lưu bản nháp tại {folder}")
+                        rec["status"] = "scraped"
+                    else:
+                        sapo_url = uploader.create_product(payload, opts)
+                        rec.update(status="created", sapo_url=sapo_url)
+                        if sku:
+                            history[sku] = {"sapo_url": sapo_url, "source": url,
+                                            "time": datetime.now().isoformat(timespec="seconds")}
+                            write_json(history_path, history)
+                except Exception as e:
+                    log(f"  ✗ Lỗi: {e}")
+                    rec["error"] = str(e)
+                    (out_dir / "logs").mkdir(exist_ok=True)
+                    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    (out_dir / "logs" / f"loi-{stamp}.txt").write_text(traceback.format_exc(), encoding="utf-8")
+                    if uploader:
+                        uploader.screenshot(out_dir / "logs" / f"loi-{stamp}.png")
+                results.append(rec)
+                time.sleep(float(cfg.get("delay_seconds", 2)))
+        finally:
+            scraper.close()
+            browser.close()
+            if uploader:
+                uploader.close()
+
+    ok = sum(r["status"] in ("created", "scraped") for r in results)
+    err = sum(r["status"] == "error" for r in results)
+    log(f"\n✅ Hoàn tất: {ok} thành công, {err} lỗi, {len(results) - ok - err} bỏ qua.")
+    write_json(out_dir / f"ket-qua-{datetime.now():%Y%m%d-%H%M%S}.json", results)
+    return results
+
+
+def login_only(cfg, log=print):
+    """Mở trình duyệt để đăng nhập Sapo lần đầu (lưu phiên đăng nhập)."""
+    with sync_playwright() as pw:
+        up = SapoUploader(pw, cfg, log)
+        try:
+            up.ensure_login()
+            log("✓ Phiên đăng nhập đã được lưu. Có thể đóng trình duyệt.")
+        finally:
+            up.close()

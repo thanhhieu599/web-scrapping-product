@@ -1,0 +1,5 @@
+browser_profile/
+output/
+__pycache__/
+*.pyc
+last_inputs.json

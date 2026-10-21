@@ -1,0 +1,2 @@
+# Mỗi dòng 1 link (trang sản phẩm hoặc trang danh mục). Dòng bắt đầu bằng # sẽ bị bỏ qua.
+# https://<web-nha-cung-cap>/san-pham/hop-dung-dung-cu-8450

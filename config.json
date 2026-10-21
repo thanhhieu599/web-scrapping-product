@@ -1,0 +1,24 @@
+{
+  "sapo_admin_url": "https://trangthietbivn.mysapo.net/admin",
+  "browser_channel": "",
+  "browser_executable": "",
+  "profile_dir": "browser_profile",
+  "output_dir": "output",
+  "auto_save": true,
+  "image_mode": "quycach",
+  "max_images": 15,
+  "fill_weight": true,
+  "skip_existing_sku": true,
+  "listing_max_pages": 10,
+  "product_link_pattern": "",
+  "delay_seconds": 2,
+  "image_url_strip_params": ["w", "h", "width", "height", "size", "resize", "mode", "rmode", "quality", "q", "fit", "crop"],
+  "source_selectors": {
+    "name": "",
+    "sku": "",
+    "price": "",
+    "variant_images": "",
+    "features": "",
+    "specs": ""
+  }
+}
