@@ -1,7 +1,6 @@
 # D&T Sapo Importer – Chép sản phẩm từ web nhà cung cấp sang Sapo
 
-Công cụ chạy **trên máy tính của bạn** (Windows/Mac/Linux). Bạn chỉ cần dán **link trang nguồn**
-(trang 1 sản phẩm hoặc cả trang danh mục), nhập **Loại** + **Nhà cung cấp** → ứng dụng tự:
+Chỉ cần dán **link trang nguồn** (trang 1 sản phẩm hoặc cả trang danh mục), nhập **Loại** + **Nhà cung cấp** → ứng dụng tự động:
 
 1. Mở trang nhà cung cấp, đọc dữ liệu sản phẩm.
 2. Tải ảnh về máy, lưu bản ghi (để đối chiếu / làm lại).
