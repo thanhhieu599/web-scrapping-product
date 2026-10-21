@@ -9,6 +9,8 @@
   "max_images": 15,
   "fill_weight": true,
   "skip_existing_sku": true,
+  "category_map_file": "danh_muc.csv",
+  "category_auto": true,
   "listing_max_pages": 10,
   "product_link_pattern": "",
   "delay_seconds": 2,

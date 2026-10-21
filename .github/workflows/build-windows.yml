@@ -34,6 +34,9 @@ jobs:
       - name: Kiểm thử tình huống xấu (mất mạng, chưa đăng nhập, ảnh lỗi...)
         run: python tests/test_edge_cases.py
 
+      - name: Kiểm thử gán danh mục nhiều cấp
+        run: python tests/test_categories.py
+
       - name: Kiểm thử giao diện
         run: python tests/test_gui.py
 

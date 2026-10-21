@@ -74,12 +74,13 @@ def gui(config_path=None):
 
     root = tk.Tk()
     root.title("D&T – Chép sản phẩm nhà cung cấp → Sapo")
-    root.geometry("1120x760")
+    root.geometry("1280x780")
     frm = ttk.Frame(root, padding=12)
     frm.pack(fill="both", expand=True)
     frm.columnconfigure(1, weight=1)
 
-    ttk.Label(frm, text="Link trang nguồn (mỗi dòng 1 link – trang sản phẩm hoặc trang danh mục):").grid(
+    ttk.Label(frm, text="Link trang nguồn – mỗi dòng 1 link (trang sản phẩm hoặc danh mục). "
+                        "Gán danh mục riêng: link | Danh mục A, Danh mục B").grid(
         row=2, column=0, columnspan=2, sticky="w")
     txt_urls = scrolledtext.ScrolledText(frm, height=6)
     txt_urls.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(2, 8))
@@ -103,6 +104,7 @@ def gui(config_path=None):
     var_force = tk.BooleanVar(value=False)
     var_vname = tk.BooleanVar(value=state.get("vendor_in_name", True))
     var_status = tk.StringVar(value=state.get("status", "Hiển thị"))
+    var_autocat = tk.BooleanVar(value=state.get("category_auto", cfg.get("category_auto", True)))
     var_img = tk.StringVar(value=state.get("image_mode", cfg.get("image_mode", "quycach")))
     opt = ttk.Frame(frm)
     opt.grid(row=9, column=0, columnspan=2, sticky="w", pady=6)
@@ -110,6 +112,7 @@ def gui(config_path=None):
     ttk.Checkbutton(opt, text="Chỉ cào thử (không đăng)", variable=var_dry).pack(side="left", padx=(0, 12))
     ttk.Checkbutton(opt, text="Đăng lại cả mã đã đăng", variable=var_force).pack(side="left", padx=(0, 12))
     ttk.Checkbutton(opt, text="Chèn nhà cung cấp vào tên", variable=var_vname).pack(side="left", padx=(0, 12))
+    ttk.Checkbutton(opt, text="Tự gán danh mục theo trang nguồn", variable=var_autocat).pack(side="left", padx=(0, 12))
     ttk.Label(opt, text="Trạng thái:").pack(side="left")
     ttk.Combobox(opt, textvariable=var_status, width=9, state="readonly",
                  values=["Hiển thị", "Ẩn"]).pack(side="left", padx=(2, 12))
@@ -190,9 +193,9 @@ def gui(config_path=None):
                 return
         st = {k: v.get() for k, v in fields.items()}
         st.update(urls=txt_urls.get("1.0", "end").strip(), auto_save=var_save.get(), image_mode=var_img.get(),
-                  vendor_in_name=var_vname.get(), status=var_status.get())
+                  vendor_in_name=var_vname.get(), status=var_status.get(), category_auto=var_autocat.get())
         write_json(STATE_FILE, st)
-        run_cfg = dict(cfg, image_mode=var_img.get())
+        run_cfg = dict(cfg, image_mode=var_img.get(), category_auto=var_autocat.get())
         opts = build_opts(st["loai"], st["ncc"], st["danh_muc"], st["tags"],
                           var_save.get(), var_dry.get(), var_force.get(), st["thuoc_tinh"], var_vname.get(),
                           var_status.get() != "Ẩn")
@@ -202,6 +205,20 @@ def gui(config_path=None):
         from dt_importer import pipeline
         sync_sapo_url()
         start(lambda: pipeline.login_only(cfg, log))
+
+    def on_open_map():
+        from dt_importer.categories import CategoryMap
+        path = Path(cfg["category_map_file"])
+        if not path.exists():
+            CategoryMap(path).save()          # tạo file mẫu có tiêu đề cột
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(path))       # mở bằng Excel
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open" if sys.platform != "darwin" else "open", str(path)])
+        except Exception as e:
+            messagebox.showinfo("Bảng ghép danh mục", f"Mở file này bằng Excel:\n{path}\n\n({e})")
 
     def on_continue():
         btn_continue.configure(state="disabled")
@@ -216,6 +233,7 @@ def gui(config_path=None):
     btn_run.pack(side="left", padx=(0, 8))
     btn_login = ttk.Button(btns, text="🔑 Đăng nhập Sapo (lần đầu)", command=on_login)
     btn_login.pack(side="left", padx=(0, 8))
+    ttk.Button(btns, text="📂 Bảng ghép danh mục", command=on_open_map).pack(side="left", padx=(0, 8))
     btn_continue = ttk.Button(btns, text="Tiếp tục ▸", command=on_continue, state="disabled")
     btn_continue.pack(side="left", padx=(0, 8))
     btn_stop = ttk.Button(btns, text="⏹ Dừng", command=on_stop, state="disabled")

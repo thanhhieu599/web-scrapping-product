@@ -3,3 +3,5 @@ output/
 __pycache__/
 *.pyc
 last_inputs.json
+danh_muc.csv
+nhat_ky.log

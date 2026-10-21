@@ -7,9 +7,10 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from .browser import launch as launch_browser
+from .categories import CategoryMap, resolve as resolve_categories, split_names
 from .content import build_content_html
 from .sapo import SapoUploader
-from .scraper import Scraper, pick_images, product_folder, upgrade_image_url, weight_grams
+from .scraper import Scraper, pick_images, product_category_path, product_folder, upgrade_image_url, weight_grams
 from .utils import format_vnd, name_with_vendor, read_json, write_json
 
 
@@ -25,6 +26,15 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
     history = read_json(history_path, {})
     results = []
     stopped = lambda: bool(stop_flag and stop_flag())
+    cmap = CategoryMap(cfg["category_map_file"]) if cfg.get("category_map_file") else None
+    auto_cat = cfg.get("category_auto", True)
+
+    # Mỗi dòng: "link" hoặc "link | Danh mục A, Danh mục B" (gán thêm danh mục cho sản phẩm từ link đó)
+    entries = []
+    for u in urls:
+        link, _, extra = str(u).partition("|")
+        if link.strip():
+            entries.append((link.strip(), split_names(extra)))
 
     with sync_playwright() as pw:
         browser = launch_browser(pw, cfg, log, headless=True)
@@ -32,17 +42,21 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
         uploader = None
         try:
             # 1) Gom danh sách URL sản phẩm
-            product_urls, cache = [], {}
-            for u in urls:
+            product_urls, cache, listing_paths, line_cats = [], {}, {}, {}
+            for u, extra in entries:
                 if stopped():
                     break
-                log(f"🔎 Đọc nguồn: {u}")
+                log(f"🔎 Đọc nguồn: {u}" + (f"  (danh mục gán thêm: {', '.join(extra)})" if extra else ""))
                 try:
-                    links, data = scraper.expand(u)
+                    links, data, lpath = scraper.expand(u)
                 except Exception as e:
                     log(f"  ✗ Không mở được: {e}")
                     continue
                 cache.update(data)
+                for l in links:
+                    listing_paths.setdefault(l, lpath)
+                    line_cats.setdefault(l, [])
+                    line_cats[l] += [x for x in extra if x not in line_cats[l]]
                 product_urls += [l for l in links if l not in product_urls]
             log(f"📦 Tổng cộng {len(product_urls)} link sản phẩm cần xử lý.")
 
@@ -84,6 +98,16 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                         log(f"  • Phiên bản: {len(variants)}" + (" → " + ", ".join(
                             f"{v['value']} ({format_vnd(v['price'])})" for v in variants) if variants else ""))
 
+                    # Danh mục Sapo: ô Danh mục chung + "link | danh mục" + theo đường dẫn danh mục nguồn
+                    cat_path = product_category_path(data, listing_paths.get(url))
+                    auto_names, how = resolve_categories(cat_path, cmap, auto_cat) if (cmap or auto_cat) else ([], "")
+                    collections = []
+                    for c in list(opts.get("collections") or []) + line_cats.get(url, []) + auto_names:
+                        if c and c.lower() not in [x.lower() for x in collections]:
+                            collections.append(c)
+                    log(f"  • Danh mục nguồn: {' > '.join(cat_path) or '(không có)'}"
+                        + (f" → Sapo: {', '.join(auto_names) or '(không gán)'} [{how}]" if how else ""))
+
                     folder = product_folder(out_dir, data)
                     strip = [x.lower() for x in cfg.get("image_url_strip_params", [])]
                     if variants and cfg.get("image_mode", "quycach") == "quycach":
@@ -102,8 +126,9 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                     title = name_with_vendor(data["name"], opts.get("vendor")) if opts.get("vendor_in_name", True) else data["name"]
                     payload = {"name": title, "sku": sku, "price": data.get("price"),
                                "content_html": html, "image_files": files, "weight_g": weight,
-                               "variants": variants, "variant_images": variant_imgs}
+                               "variants": variants, "variant_images": variant_imgs, "collections": collections}
                     write_json(folder / "product.json", {**data, "title": title, "weight_g": weight,
+                                                         "category_path": cat_path, "collections": collections,
                                                          "image_files": files, "variants": variants})
                     if scraper.page.url.split("#")[0] == url.split("#")[0]:
                         scraper.save_source_html(folder / "trang_goc.html")
@@ -136,6 +161,16 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                 results.append(rec)
                 time.sleep(float(cfg.get("delay_seconds", 2)))
         finally:
+            if cmap:
+                try:
+                    cmap.save()
+                    if cmap.new_paths:
+                        log(f"\n📂 {len(cmap.new_paths)} danh mục nguồn mới đã được thêm vào {cmap.path.name} "
+                            "– mở bằng Excel, điền cột 'Danh mục Sapo' để lần sau gán đúng:")
+                        for p_ in cmap.new_paths[:20]:
+                            log(f"     {p_}")
+                except OSError as e:
+                    log(f"  ! Không ghi được {cmap.path.name} (đang mở trong Excel?): {e}")
             scraper.close()
             browser.close()
             if uploader:
