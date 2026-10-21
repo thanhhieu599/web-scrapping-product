@@ -34,7 +34,7 @@ Các mã model ở khối đó chỉ được dùng làm **tiêu đề cột** c
 ## 2. Bản Windows chạy ngay – KHÔNG cần cài đặt (dùng cho máy khách hàng)
 
 1. Vào trang **[Releases](https://github.com/thanhhieu599/web-scrapping-product/releases/latest)**,
-   tải file **`DT-Sapo-Importer-windows.zip`** (~250 MB, đã gồm Python, thư viện, trình duyệt Chromium).
+   tải file **`DT-Sapo-Importer-windows.zip`** (~400 MB, đã gồm Python, thư viện, trình duyệt Chromium).
 2. Chuột phải → **Extract All** → mở thư mục `DT-Sapo-Importer` → nhấp đúp **`DT-Sapo-Importer.exe`**.
 3. Nhập **Địa chỉ Sapo Admin** của cửa hàng (vd `https://tencuahang.mysapo.net/admin`) → bấm **Đăng nhập Sapo (lần đầu)**.
 
