@@ -132,6 +132,20 @@ c = d.get("content", "")
 check(c.count("<img") >= 4 and "/media/catalog/product/4/8/48-22-8424-hero01.png" in c and "/img/p5.jpg" in c,
       "Mô tả có ảnh: hàng ảnh trong bảng Thông số + ảnh trong Đặc điểm")
 
+# Trang DANH MỤC kiểu Magento (như milwaukeetool.com.vn/jobsite-enhancement/storage): 2 trang, thẻ SP có mã + giá
+print("\n=== TRANG DANH MỤC → TỰ KÉO HẾT SẢN PHẨM ===")
+res = pipeline.run([f"{base}/san-pham/luu-tru.html"], dict(opts, dry_run=True, force=True), cfg)
+got = sorted(r["url"].rsplit("/", 1)[-1] for r in res)
+want = sorted(["magento-packout.html", "hop-dung-dung-cu-8450.html", "hop-dung-dung-cu-8424.html", "hop-dung-dung-cu-8425.html"])
+check(got == want, f"Danh mục: lấy đủ 4 SP qua 2 trang, bỏ link quảng cáo/menu ({got})")
+check(all(r["status"] == "scraped" for r in res), f"Danh mục: cả 4 đều đọc được ({[r['status'] for r in res]})")
+check(not any("luu-tru" in r["url"] for r in res), "Danh mục: KHÔNG nhận nhầm trang danh mục là 1 sản phẩm")
+saved.clear()
+res = pipeline.run([f"{base}/san-pham/luu-tru.html"], dict(opts, force=True, variant_attr="Model"), cfg)
+check(len(saved) == 4 and all(r["status"] == "created" for r in res), f"Danh mục → Sapo: đăng đủ 4 sản phẩm ({len(saved)})")
+mg = next((x for x in saved if x.get("sku") == "48-22-8425" and x.get("variants")), {})
+check(len(mg.get("variants", [])) == 3, f"Danh mục → Sapo: sản phẩm có Quy cách được tạo 3 phiên bản ({len(mg.get('variants', []))})")
+
 srv.shutdown()
 shutil.rmtree(tmp, ignore_errors=True)
 print("\nKẾT QUẢ:", "TẤT CẢ ĐẠT" if ok else "CÓ LỖI")

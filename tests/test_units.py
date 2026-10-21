@@ -89,6 +89,9 @@ eq(Scraper.is_product(P(price=False, sku="A-1", specs=True)), True, "sản phẩ
 eq(Scraper.is_product(P(price=False, sku="", features=True)), False, "không giá, không mã → không chắc là SP")
 eq(Scraper.is_product(P(price=True)), False, "trang danh mục (chỉ có giá)")
 eq(Scraper.is_product(P(name="", price=True, sku="A")), False, "không có tên")
+eq(Scraper.is_product(P(price=True, sku="48-22-8424", listing=True)), False, "trang danh mục có mã + giá ở thẻ SP → KHÔNG phải SP")
+eq(Scraper.is_product(P(price=True, sku="48-22-8424", listing=True, product_view=True)), True, "trang SP có khối 'SP liên quan' vẫn là SP")
+eq(Scraper.is_product(P(price=True, sku="A1", listing=True, specs=True)), True, "có Thông số → trang chi tiết dù có nhiều giá")
 
 print("=== Chọn ảnh ===")
 d = {"variant_images": ["v1", "v2"], "gallery_images": ["g1", "v1"]}

@@ -122,6 +122,14 @@ python main.py --login               # chỉ đăng nhập Sapo
   nó dừng lại để bạn hoàn tất bằng tay, và lưu form vào `output/logs/sapo-form-*.html` – gửi file này để chỉnh công cụ.
 - Để trống ô Tên thuộc tính → đăng sản phẩm đơn như trước.
 
+### Dán link trang danh mục – tự kéo hết sản phẩm
+Chỉ cần dán link trang chứa nhiều sản phẩm, vd `https://www.milwaukeetool.com.vn/jobsite-enhancement/storage`:
+- Ứng dụng nhận ra đây là **trang danh mục** (nhiều thẻ sản phẩm/nhiều giá), lấy link **từng sản phẩm** trong các thẻ
+  (bỏ qua menu, quảng cáo, chân trang), rồi **tự sang trang 2, 3…** ("Hiển thị 1-12 của 21 kết quả" → lấy đủ 21).
+- Từng sản phẩm được cào và đăng lên Sapo như khi dán link sản phẩm (kể cả phiên bản nếu nhập Tên thuộc tính).
+- Giới hạn số trang quét: `listing_max_pages` trong `config.json` (mặc định 10 trang).
+- Nên chạy **"Chỉ cào thử"** trước với trang danh mục mới, xem log có đủ số sản phẩm không.
+
 ## 4. Kết quả lưu ở đâu
 
 ```

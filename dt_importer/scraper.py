@@ -34,6 +34,28 @@ SCRAPE_JS = COMMON_JS + r"""
   const inPopup = e => !!e.closest('.modal, .modal-popup, [role=dialog], [class*=popup], [class*=store-locator], [class*=find-store], [class*=newsletter]');
   const firstOf = (sels) => { for (const s of sels) { const e = qsa(document, s).find(x => visible(x) && !inPopup(x)); if (e) return e; } return null; };
 
+  // ---------- LOẠI TRANG: danh mục (nhiều sản phẩm) hay trang 1 sản phẩm ----------
+  const pageType = () => {
+    const body = document.body.className || '';
+    const ldTypes = [];
+    for (const sc of document.querySelectorAll('script[type="application/ld+json"]')) {
+      try { const j = JSON.parse(sc.textContent); (Array.isArray(j) ? j : (j['@graph'] || [j]))
+              .forEach(o => o && o['@type'] && ldTypes.push(String(o['@type']))); } catch (e) {}
+    }
+    const og = ((document.querySelector('meta[property="og:type"]') || {}).content || '').toLowerCase();
+    const cards = qsa(document, '.product-item, li.product, .product-card, .product-grid-item, [class*="product-item"]')
+                    .filter(e => !inChrome(e) && !e.closest('.related, .upsell, .crosssell, [class*=related], [class*=upsell]'));
+    const prices = all.filter(e => PRICE_RE.test(norm(e.textContent)) && !inChrome(e) && visible(e)
+                     && !e.closest('del, s, strike, [class*=old], .related, .upsell, [class*=related]'));
+    const priceLeaves = prices.filter(e => ![...e.children].some(c => prices.includes(c))).length;
+    return {
+      product_view: /catalog-product-view|single-product|product-template/.test(body) || ldTypes.includes('Product') || og === 'product',
+      listing: /catalog-category-view|catalogsearch-result|page-products|archive|product-list/.test(body)
+               || cards.length >= 3 || priceLeaves >= 3 || ldTypes.includes('ItemList') || ldTypes.includes('CollectionPage'),
+      cards: cards.length, price_count: priceLeaves,
+    };
+  };
+
   // ---------- GIÁ ----------
   // Ưu tiên cấu trúc Magento / schema.org, sau đó mới dò theo dạng "x.xxx.xxx ₫"
   let priceEl = qs(sel.price) || firstOf([
@@ -323,7 +345,8 @@ SCRAPE_JS = COMMON_JS + r"""
     variant_images: [...new Set(variantImages)].filter(Boolean),
     gallery_images: [...new Set(galleryImages)].filter(Boolean),
     features, feature_images: [...new Set(featureImages)], spec,
-    found: { price: !!priceEl, name: !!name, features: !!featRoot, specs: !!specRoot, spec_source: spec.source }
+    found: { price: !!priceEl, name: !!name, features: !!featRoot, specs: !!specRoot, spec_source: spec.source,
+             ...pageType() }
   };
 }
 """
@@ -398,7 +421,19 @@ LINKS_JS = COMMON_JS + r"""
   const pat = cfg.pattern ? new RegExp(cfg.pattern, 'i') : null;
   const here = location.href.split('#')[0];
   const out = [];
-  for (const a of document.querySelectorAll('a[href]')) {
+  // Ưu tiên link trong THẺ SẢN PHẨM (Magento/WooCommerce/Haravan...) – chính xác hơn dò mọi link có ảnh
+  const CARD_LINKS = 'a.product-item-link, a.product-item-photo, .product-item-name a, .product-item a.photo, '
+                   + 'li.product a.woocommerce-LoopProduct-link, .product-card a, .product-grid-item a, .product-item a';
+  if (!pat) {
+    for (const a of qsa(document, CARD_LINKS)) {
+      if (inChrome(a) || a.closest('.related, .upsell, .crosssell, [class*=related], [class*=upsell], .pages, .toolbar')) continue;
+      const u = abs(a.getAttribute('href'));
+      if (!u || !u.startsWith(location.origin) || u.split('#')[0] === here || /\.(jpe?g|png|webp|gif|pdf)(\?|$)/i.test(u)) continue;
+      if (/[?&](p|page)=\d+|\/page\/\d+|add-to-cart|wishlist|compare/i.test(u)) continue;
+      out.push(u.split('#')[0]);
+    }
+  }
+  for (const a of (out.length ? [] : document.querySelectorAll('a[href]'))) {
     const u = abs(a.getAttribute('href'));
     if (!u || !u.startsWith(location.origin) || u.split('#')[0] === here) continue;
     if (/\.(jpe?g|png|webp|gif|pdf)(\?|$)/i.test(u)) continue;
@@ -406,10 +441,14 @@ LINKS_JS = COMMON_JS + r"""
     else if (!a.querySelector('img') || inChrome(a)) continue;   // mặc định: link có ảnh, ngoài menu
     out.push(u.split('#')[0]);
   }
-  let next = document.querySelector('a[rel=next]');
-  if (!next) next = [...document.querySelectorAll('.pagination a, [class*=paging] a, [class*=pagination] a')]
-      .find(a => /^(›|»|>|sau|next|tiếp)$/i.test(norm(a.textContent)) || /next/i.test(a.className));
-  return { links: [...new Set(out)], next: next ? abs(next.getAttribute('href')) : null };
+  // Trang kế tiếp: <link rel=next> (Magento để trong <head>), a[rel=next], nút "Tiếp/›/Next" trong khối phân trang
+  let next = document.querySelector('link[rel=next], a[rel=next]');
+  if (!next) next = document.querySelector('.pages a.action.next, .pages-item-next a, a.next.page-numbers, li.next a, .pagination .next a');
+  if (!next) next = [...document.querySelectorAll('.pagination a, .pages a, [class*=paging] a, [class*=pagination] a, [class*=pager] a')]
+      .find(a => /^(›|»|>|sau|next|tiếp|trang tiếp|trang sau|tiếp theo)$/i.test(norm(a.textContent))
+                 || /(^|\s)next(\s|$)/i.test(a.className) || /next/i.test(a.getAttribute('aria-label') || ''));
+  const nh = next ? abs(next.getAttribute('href')) : null;
+  return { links: [...new Set(out)], next: nh && nh.split('#')[0] !== here ? nh : null };
 }
 """
 
@@ -480,9 +519,13 @@ class Scraper:
         detail = f.get("specs") or f.get("features")
         if not data.get("name"):
             return False
-        if f.get("price"):
-            return bool(data.get("sku") or detail)
-        return bool(data.get("sku") and detail)
+        if f.get("product_view"):                       # trang khai báo rõ là trang sản phẩm
+            return bool(f.get("price") or data.get("sku") or detail)
+        if detail:                                      # có Đặc điểm / Thông số → trang chi tiết
+            return bool(f.get("price") or data.get("sku"))
+        if f.get("listing"):                            # nhiều thẻ SP / nhiều giá → trang danh mục
+            return False
+        return bool(f.get("price") and data.get("sku"))
 
     def scrape_variants(self, base_url, base):
         """Đọc từng phiên bản dưới QUY CÁCH: nhãn, mã SP, giá, ảnh. Trả [] nếu không có."""
