@@ -54,7 +54,7 @@ def is_net_error(exc):
     return any(code in str(exc) for code in NET_ERRORS)
 
 
-def goto(page, url, log=print, retries=3, timeout=60000):
+def goto(page, url, log=print, retries=4, timeout=60000):
     """page.goto có thử lại khi lỗi mạng; hết lượt thì chẩn đoán và báo cách xử lý."""
     last = None
     for attempt in range(1, retries + 1):

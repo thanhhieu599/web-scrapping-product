@@ -18,7 +18,7 @@ Chỉ cần dán **link trang nguồn** (trang 1 sản phẩm hoặc cả trang 
 | Giá (vd `2.940.000 ₫` → `2940000`) | → | **Giá** + tự tick **"Giá đã bao gồm VAT"** |
 | Các ảnh dưới chữ **QUY CÁCH** (tải ảnh gốc, đổi sang JPG) | → | **Ảnh sản phẩm** |
 | Mục **Đặc điểm** (danh sách gạch đầu dòng) | → | **Nội dung** – phần "Đặc điểm nổi bật" |
-| Mục **Thông Số** (bảng, giữ đủ các cột model) | → | **Nội dung** – bảng "Thông số kỹ thuật" có kẻ khung, tô màu xen kẽ |
+| Mục **Thông Số** – giữ nguyên dạng **bảng** như trang gốc (đủ hàng, cột model, dòng tiêu đề nhóm). Trang dùng bảng HTML hay xếp lưới bằng `div` (như Milwaukee/Magento) đều dựng lại được thành bảng | → | **Nội dung** – bảng "Thông số kỹ thuật" có kẻ khung, tô màu xen kẽ |
 | Trọng lượng (kg) đúng cột của mã sản phẩm | → | **Khối lượng** (gram, để tính phí ship) |
 | Bạn nhập: Loại sản phẩm | → | **Loại** |
 | Bạn nhập: Nhà cung cấp | → | **Nhà cung cấp** |
@@ -114,7 +114,8 @@ output/
 ├── 48-22-8450/
 │   ├── images/01.jpg, 02.jpg …   # ảnh đã tải (độ phân giải gốc, JPG)
 │   ├── product.json             # toàn bộ dữ liệu đã cào
-│   └── noi_dung.html            # nội dung đã dựng – mở bằng trình duyệt để xem trước
+│   ├── noi_dung.html            # nội dung đã dựng – mở bằng trình duyệt để xem trước
+│   └── trang_goc.html           # bản lưu trang nguồn – gửi file này khi cần chỉnh cách đọc dữ liệu
 ├── history.json                 # mã SP đã đăng → link sản phẩm trên Sapo (chống đăng trùng)
 ├── ket-qua-YYYYMMDD-HHMMSS.json # báo cáo mỗi lần chạy
 └── logs/                        # chi tiết lỗi + ảnh chụp màn hình Sapo khi lỗi

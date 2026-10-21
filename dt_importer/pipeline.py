@@ -67,6 +67,7 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                     sku = data.get("sku") or ""
                     log(f"  • {data['name']} | Mã: {sku or '(không có)'} | Giá: {format_vnd(data.get('price')) or '(không có)'}")
                     log(f"  • Đặc điểm: {len(data['features'])} dòng | Thông số: {len(data['spec']['rows'])} dòng"
+                        f" ({data['found'].get('spec_source') or '-'})"
                         f" | Ảnh quy cách: {len(data['variant_images'])} | Ảnh gallery: {len(data['gallery_images'])}")
                     if sku and sku in history and cfg.get("skip_existing_sku", True) and not opts.get("force"):
                         log(f"  – Bỏ qua: mã {sku} đã đăng trước đó ({history[sku].get('sapo_url')})")
@@ -82,6 +83,8 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                     payload = {"name": data["name"], "sku": sku, "price": data.get("price"),
                                "content_html": html, "image_files": files, "weight_g": weight}
                     write_json(folder / "product.json", {**data, "weight_g": weight, "image_files": files})
+                    if scraper.page.url.split("#")[0] == url.split("#")[0]:
+                        scraper.save_source_html(folder / "trang_goc.html")
                     (folder / "noi_dung.html").write_text(html, encoding="utf-8")
                     rec.update(sku=sku, name=data["name"], folder=str(folder))
 

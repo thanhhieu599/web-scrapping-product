@@ -7,6 +7,7 @@ Nếu trang nguồn đổi giao diện, có thể chỉ định CSS selector tro
 """
 import io
 import re
+import time
 from pathlib import Path
 from urllib.parse import urlparse, urlencode, parse_qsl, urlunparse
 
@@ -29,49 +30,63 @@ SCRAPE_JS = COMMON_JS + r"""
   const PRICE_RE = /^(\d{1,3}([.,\s]\d{3})+|\d{4,})\s*(₫|đ|vnđ|vnd)$/i;
   const all = [...document.body.querySelectorAll('*')].filter(e => !SKIP_TAGS.has(e.tagName));
 
+  const visible = e => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
+  const inPopup = e => !!e.closest('.modal, .modal-popup, [role=dialog], [class*=popup], [class*=store-locator], [class*=find-store], [class*=newsletter]');
+  const firstOf = (sels) => { for (const s of sels) { const e = qsa(document, s).find(x => visible(x) && !inPopup(x)); if (e) return e; } return null; };
+
   // ---------- GIÁ ----------
-  let priceEl = qs(sel.price);
+  // Ưu tiên cấu trúc Magento / schema.org, sau đó mới dò theo dạng "x.xxx.xxx ₫"
+  let priceEl = qs(sel.price) || firstOf([
+    '.product-info-main [data-price-type=finalPrice] .price', '.product-info-price .price',
+    '.product-info-main .price-box .price', '[itemprop=offers] [itemprop=price]']);
   if (!priceEl) {
-    const m = all.filter(e => PRICE_RE.test(norm(e.textContent)) && !inChrome(e)
-                     && !e.closest('del, s, strike, [class*=old], [class*=compare]'));
+    const m = all.filter(e => PRICE_RE.test(norm(e.textContent)) && !inChrome(e) && !inPopup(e)
+                     && visible(e) && !e.closest('del, s, strike, [class*=old], [class*=compare]'));
     const leaf = m.filter(e => ![...e.children].some(c => m.includes(c)));
     priceEl = leaf[0] || null;
   }
   const priceText = priceEl ? norm(priceEl.textContent) : '';
 
   // ---------- KHỐI THÔNG TIN (chứa tên + giá) ----------
-  let info = null;
-  if (priceEl) {
+  let info = qs('.product-info-main');
+  if (!info && priceEl) {
     let n = priceEl.parentElement;
     while (n && n !== document.body) {
-      if (n.querySelector('h1, h2, h3')) { info = n; break; }
+      if ([...n.querySelectorAll('h1, h2, h3')].some(h => visible(h) && !inPopup(h))) { info = n; break; }
       n = n.parentElement;
     }
   }
 
   // ---------- TÊN ----------
-  let nameEl = qs(sel.name);
-  if (!nameEl && info) nameEl = info.querySelector('h1, h2, h3');
-  if (!nameEl) nameEl = document.querySelector('h1');
-  const name = nameEl ? norm(nameEl.textContent) : '';
+  // textContent (không phải innerText) để tránh chữ IN HOA do CSS của banner
+  let nameEl = qs(sel.name) || firstOf([
+    '.product-info-main .page-title .base', '.product-info-main .page-title', '[itemprop=name]',
+    '.product-name h1', 'h1.page-title .base', '.page-title .base', 'h1']);
+  if (!nameEl && info) nameEl = [...info.querySelectorAll('h1, h2, h3')].find(h => visible(h) && !inPopup(h));
+  let name = nameEl ? norm(nameEl.textContent) : '';
+  if (name && name === name.toUpperCase()) {
+    // tên toàn chữ hoa → tìm bản viết thường cùng nội dung (tiêu đề khác trên trang / og:title)
+    const alt = [...document.querySelectorAll('h1, h2, h3, [itemprop=name]')].map(h => norm(h.textContent))
+      .concat([norm((document.querySelector('meta[property="og:title"]') || {}).content || '')])
+      .find(t => t && t !== t.toUpperCase() && t.toLowerCase() === name.toLowerCase());
+    if (alt) name = alt;
+  }
 
   // ---------- MÃ SẢN PHẨM (chuỗi nhỏ ngay dưới tên) ----------
   const SKU_RE = /^(?=.*\d)[A-Z0-9]{1,10}([-./][A-Z0-9]{1,12})+$|^(?=.*\d)(?=.*[A-Z])[A-Z0-9]{5,20}$/i;
+  const cleanSku = t => norm(t).replace(/^(mã|mã sp|mã sản phẩm|sku|model)\s*[:：]?\s*/i, '');
   let sku = '';
-  const skuEl = qs(sel.sku);
-  if (skuEl) sku = norm(skuEl.textContent);
-  if (!sku && nameEl) {
+  const skuEl = qs(sel.sku) || firstOf(['.product-info-main .product.attribute.sku .value',
+    '.product.attribute.sku .value', '[itemprop=sku]', '.product-sku', '.sku .value']);
+  if (skuEl) sku = cleanSku(skuEl.textContent || skuEl.getAttribute('content'));
+  if (!sku) {
+    // chuỗi dạng mã (vd 48-22-8450) nằm giữa tên và giá trong khối thông tin
     const root = info || document.body;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-    let started = false, steps = 0;
-    while (walker.nextNode() && steps < 400) {
-      const e = walker.currentNode;
-      if (e === nameEl) { started = true; continue; }
-      if (!started || nameEl.contains(e)) continue;
-      steps++;
-      const t = norm(e.textContent).replace(/^(mã|mã sp|mã sản phẩm|sku|model)\s*[:：]?\s*/i, '');
-      if (e.children.length === 0 && t.length <= 40 && SKU_RE.test(t) && !PRICE_RE.test(t)) { sku = t; break; }
-    }
+    const cands = [...root.querySelectorAll('*')].filter(e => e.children.length === 0 && visible(e) && !inPopup(e))
+      .filter(e => { const t = cleanSku(e.textContent); return t.length <= 40 && SKU_RE.test(t) && !PRICE_RE.test(t); });
+    const before = priceEl ? cands.filter(e => e.compareDocumentPosition(priceEl) & Node.DOCUMENT_POSITION_FOLLOWING) : cands;
+    const pick = before[0] || cands[0];
+    if (pick) sku = cleanSku(pick.textContent);
   }
   if (!sku) {
     const m = (info || document.body).textContent.match(/(?:mã sản phẩm|mã sp|sku)\s*[:：]\s*([A-Z0-9][A-Z0-9\-./]{2,})/i);
@@ -174,32 +189,113 @@ SCRAPE_JS = COMMON_JS + r"""
       if (specRoot) break;
     }
   }
-  const spec = { headers: [], rows: [], text: [] };
+  const spec = { headers: [], rows: [], text: [], source: '' };
+
+  // Lưới từ <table> thật
+  const gridFromTables = (tables) => {
+    const g = [];
+    for (const tb of tables) for (const tr of tb.querySelectorAll('tr')) {
+      const row = [];
+      for (const c of [...tr.children].filter(c => /^T[DH]$/.test(c.tagName))) {
+        row.push(norm(c.textContent));
+        for (let k = 1; k < (c.colSpan || 1); k++) row.push('');
+      }
+      g.push(row);
+    }
+    return g;
+  };
+
+  // Lưới dựng theo VỊ TRÍ HIỂN THỊ (trang xếp bảng bằng <div>): cùng hàng = cùng độ cao, cùng cột = cùng vị trí ngang
+  const gridFromLayout = (root) => {
+    const restore = [];
+    for (let n = root; n && n !== document.body; n = n.parentElement) {     // mở accordion/tab đang ẩn
+      const cs = getComputedStyle(n);
+      if (cs.display === 'none') { restore.push([n, n.style.cssText]); n.style.display = 'block'; }
+      if (cs.visibility === 'hidden') { restore.push([n, n.style.cssText]); n.style.visibility = 'visible'; }
+      if (cs.maxHeight === '0px' || (cs.overflow === 'hidden' && n.offsetHeight === 0)) {
+        restore.push([n, n.style.cssText]); n.style.maxHeight = 'none'; n.style.height = 'auto';
+      }
+    }
+    // mỗi đoạn chữ = 1 mảnh, lấy toạ độ thật trên màn hình
+    const pieces = [];
+    const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    while (tw.nextNode()) {
+      const tn = tw.currentNode, t = norm(tn.textContent);
+      if (!t || !tn.parentElement || SKIP_TAGS.has(tn.parentElement.tagName)) continue;
+      const r = document.createRange(); r.selectNodeContents(tn);
+      const b = r.getBoundingClientRect();
+      if (b.width < 1 || b.height < 1) continue;
+      pieces.push({ t, l: b.left, r: b.right, top: b.top, bot: b.bottom });
+    }
+    restore.forEach(([n, css]) => { n.style.cssText = css; });
+    if (pieces.length < 4) return null;
+    // ghép các mảnh liền nhau trên cùng dòng thành 1 ô (vd "Chiều dài" + "(mm)")
+    pieces.sort((a, b) => a.top - b.top || a.l - b.l);
+    const cells = [];
+    for (const p of pieces) {
+      const last = cells[cells.length - 1];
+      if (last && Math.abs(last.top - p.top) < 4 && p.l - last.r < 8 && p.l >= last.l) {
+        last.t += ' ' + p.t; last.r = Math.max(last.r, p.r); last.bot = Math.max(last.bot, p.bot);
+      } else cells.push({ ...p });
+    }
+    // hàng: các ô có tâm dọc nằm trong cùng dải
+    const rows = [];
+    for (const c of [...cells].sort((a, b) => a.top - b.top)) {
+      const mid = (c.top + c.bot) / 2, row = rows[rows.length - 1];
+      if (row && mid < row.bot) { row.cells.push(c); row.bot = Math.max(row.bot, c.bot); }
+      else rows.push({ top: c.top, bot: c.bot, cells: [c] });
+    }
+    // cột: gộp khoảng ngang của các ô (bỏ ô quá rộng như tiêu đề nhóm)
+    const width = root.getBoundingClientRect().width || 1000;
+    const iv = cells.filter(c => (c.r - c.l) < width * 0.45).map(c => [c.l, c.r]).sort((a, b) => a[0] - b[0]);
+    const bands = [];
+    for (const [l, r] of iv) {
+      const b = bands[bands.length - 1];
+      if (b && l <= b[1] + 2) b[1] = Math.max(b[1], r); else bands.push([l, r]);
+    }
+    if (bands.length < 2) return null;
+    const bandOf = c => {
+      const mid = (c.l + c.r) / 2;
+      let best = 0, d = Infinity;
+      bands.forEach(([l, r], i) => { const dist = mid < l ? l - mid : mid > r ? mid - r : 0; if (dist < d) { d = dist; best = i; } });
+      return best;
+    };
+    return rows.map(row => {
+      const out = Array(bands.length).fill('');
+      const wide = row.cells.length === 1 && (row.cells[0].r - row.cells[0].l) >= width * 0.45;
+      if (wide) { out[0] = row.cells[0].t; return out; }
+      row.cells.sort((a, b) => a.l - b.l).forEach(c => { const i = bandOf(c); out[i] = out[i] ? out[i] + ' ' + c.t : c.t; });
+      return out;
+    });
+  };
+
   if (specRoot) {
     const tables = specRoot.tagName === 'TABLE' ? [specRoot] : [...specRoot.querySelectorAll('table')];
-    if (tables.length) {
+    let grid = null;
+    if (tables.length) { grid = gridFromTables(tables); spec.source = 'table'; }
+    else { grid = gridFromLayout(specRoot); spec.source = grid ? 'layout' : 'text'; }
+    if (grid) {
       let skipQty = false;
-      for (const tb of tables) {
-        for (const tr of tb.querySelectorAll('tr')) {
-          const cells = [...tr.children].filter(c => /^T[DH]$/.test(c.tagName)).map(c => norm(c.textContent));
-          if (!cells.length || cells.every(c => !c)) continue;              // hàng ảnh / hàng trống
-          const first = cells[0].toLowerCase();
-          if (first.startsWith('bao gồm')) {                                 // KHÔNG lấy khối "Bao gồm trong sản phẩm"
-            if (!spec.headers.length) spec.headers = cells.slice(1).map(c => c.replace(/\s*\(\d+\)\s*$/, ''));
-            skipQty = true;
-            continue;
-          }
-          if (skipQty && !cells[0] && cells.slice(1).some(c => /\(\d+\)\s*$/.test(c))) { skipQty = false; continue; }
-          skipQty = false;
-          if (!cells[0] && !spec.headers.length && cells.length > 1) { spec.headers = cells.slice(1); continue; }
-          const filled = cells.filter(Boolean).length;
-          if (filled === 1 && cells[0]) { spec.rows.push({ section: cells[0] }); continue; }
-          spec.rows.push({ label: cells[0], values: cells.slice(1) });
+      for (const cells of grid) {
+        if (!cells.length || cells.every(c => !c)) continue;                // hàng ảnh / hàng trống
+        const first = (cells[0] || '').toLowerCase();
+        const isQty = c => /\(\d+\)\s*$/.test(c);
+        if (first.startsWith('bao gồm')) {                                   // KHÔNG lấy khối "Bao gồm trong sản phẩm"
+          const vals = cells.slice(1).filter(Boolean);
+          if (!spec.headers.length && vals.length && !vals.every(isQty)) spec.headers = cells.slice(1).map(c => norm(c.replace(/\S+\s*\(\d+\)/g, '')) || c);
+          skipQty = true;
+          continue;
         }
+        if (!cells[0] && cells.slice(1).some(Boolean) && cells.slice(1).filter(Boolean).every(isQty)) { skipQty = false; continue; } // dòng "48-22-xxxx (1)"
+        skipQty = false;
+        if (!cells[0] && !spec.headers.length && cells.length > 1) { spec.headers = cells.slice(1); continue; } // dòng mã model
+        const filled = cells.filter(Boolean).length;
+        if (filled === 1 && cells[0]) { spec.rows.push({ section: cells[0] }); continue; }
+        spec.rows.push({ label: cells[0], values: cells.slice(1) });
       }
     } else {
       spec.text = (specRoot.innerText || specRoot.textContent).split(/\n+/).map(norm).filter(Boolean)
-                   .filter(t => !/^bao gồm/i.test(t));
+                   .filter(t => !/^bao gồm/i.test(t) && !/\(\d+\)\s*$/.test(t));
     }
   }
 
@@ -208,7 +304,7 @@ SCRAPE_JS = COMMON_JS + r"""
     variant_images: [...new Set(variantImages)].filter(Boolean),
     gallery_images: [...new Set(galleryImages)].filter(Boolean),
     features, spec,
-    found: { price: !!priceEl, name: !!name, features: !!featRoot, specs: !!specRoot }
+    found: { price: !!priceEl, name: !!name, features: !!featRoot, specs: !!specRoot, spec_source: spec.source }
   };
 }
 """
@@ -236,6 +332,7 @@ LINKS_JS = COMMON_JS + r"""
 
 def upgrade_image_url(url, strip_params):
     """Bỏ tham số thu nhỏ ảnh (?width=..) để lấy ảnh gốc."""
+    url = re.sub(r"/media/catalog/product/cache/[0-9a-f]{32}/", "/media/catalog/product/", url)
     try:
         p = urlparse(url)
         q = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if k.lower() not in strip_params]
@@ -254,6 +351,7 @@ class Scraper:
         probe.close()
         self.ctx = browser.new_context(viewport={"width": 1366, "height": 900}, locale="vi-VN", user_agent=ua)
         self.page = self.ctx.new_page()
+        self.img_page = None
 
     def close(self):
         self.ctx.close()
@@ -306,33 +404,70 @@ class Scraper:
             page_url = res["next"]
         return links, {}
 
+    def _fetch_bytes(self, url, tries=3):
+        """Tải 1 file qua CHÍNH trình duyệt (cùng đường mạng, cookie, chứng chỉ với trang) – có thử lại."""
+        last = None
+        for k in range(tries):
+            try:
+                if self.img_page is None:
+                    self.img_page = self.ctx.new_page()
+                resp = self.img_page.goto(url, wait_until="load", timeout=45000)
+                if resp and resp.ok:
+                    return resp.body()
+                last = f"HTTP {resp.status if resp else '?'}"
+                if resp and resp.status in (403, 404, 410):
+                    break
+            except Exception as e:
+                last = str(e).splitlines()[0]
+                self.img_page = None if "closed" in last.lower() else self.img_page
+            time.sleep(1.5 * (k + 1))
+        # phương án phụ: kênh request riêng của Playwright
+        try:
+            r = self.ctx.request.get(url, timeout=30000, headers={"Referer": self.page.url})
+            if r.ok:
+                return r.body()
+            last = f"HTTP {r.status}"
+        except Exception as e:
+            last = str(e).splitlines()[0]
+        raise RuntimeError(last)
+
     def download_images(self, urls, folder, max_images=15):
         from PIL import Image
         folder = Path(folder)
         folder.mkdir(parents=True, exist_ok=True)
         strip = [s.lower() for s in self.cfg.get("image_url_strip_params", [])]
+        max_side = int(self.cfg.get("image_max_side", 2000))
         files = []
         for i, u in enumerate(urls[:max_images], 1):
+            errs = []
             for cand in dict.fromkeys([upgrade_image_url(u, strip), u]):
                 try:
-                    r = self.ctx.request.get(cand, timeout=30000, headers={"Referer": self.page.url})
-                    if not r.ok:
-                        continue
-                    img = Image.open(io.BytesIO(r.body()))
+                    img = Image.open(io.BytesIO(self._fetch_bytes(cand)))
                     img.load()
                     if img.mode not in ("RGB", "L"):
+                        rgba = img.convert("RGBA")
                         bg = Image.new("RGB", img.size, (255, 255, 255))
-                        bg.paste(img.convert("RGBA"), mask=img.convert("RGBA").split()[-1])
+                        bg.paste(rgba, mask=rgba.split()[-1])
                         img = bg
+                    if max(img.size) > max_side:
+                        img.thumbnail((max_side, max_side))
                     path = folder / f"{i:02d}.jpg"
                     img.convert("RGB").save(path, "JPEG", quality=92)
                     if min(img.size) < 300:
                         self.log(f"    ! Ảnh {i} nhỏ ({img.size[0]}x{img.size[1]}px)")
                     files.append(str(path))
                     break
-                except Exception as e:  # ảnh lỗi thì bỏ qua, thử link khác
-                    self.log(f"    ! Không tải được ảnh {cand}: {e}")
+                except Exception as e:  # thử link khác
+                    errs.append(str(e).splitlines()[0][:120])
+            else:
+                self.log(f"    ! Không tải được ảnh {i}: {u} ({'; '.join(errs)})")
         return files
+
+    def save_source_html(self, path):
+        try:
+            Path(path).write_text(self.page.content(), encoding="utf-8")
+        except Exception:
+            pass
 
 
 def pick_images(data, mode):
