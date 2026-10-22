@@ -589,9 +589,19 @@ class SapoUploader:
                 stamp = time.strftime("%Y%m%d-%H%M%S")
                 self.dump_html(logs / f"sapo-form-{stamp}.html")
                 self.log(f"    ! Phiên bản chưa đầy đủ – vẫn lưu; form Sapo lưu ở output/logs/sapo-form-{stamp}.html")
+        dbg = Path(p["debug_dir"]) if p.get("debug_dir") else None
+        if dbg:                                    # chẩn đoán: form Sapo ngay trước khi Lưu
+            self.dump_html(dbg / "sapo_form.html")
+            self.screenshot(dbg / "sapo_truoc_khi_luu.png")
         if opts.get("auto_save", True):
             url = self._save()
             self.log(f"    ✓ Đã lưu: {url}")
+            if dbg:                                # ảnh chụp sản phẩm SAU khi lưu (kiểm tra ảnh, phiên bản)
+                try:
+                    self.page.wait_for_timeout(1500)
+                except Exception:
+                    pass
+                self.screenshot(dbg / "sapo_sau_khi_luu.png")
             return url
         self.wait_user("Kiểm tra form trên trình duyệt rồi tự bấm Lưu. Xong thì bấm Tiếp tục.")
         return self._saved_url()

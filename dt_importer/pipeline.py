@@ -21,6 +21,19 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
     """
     out_dir = Path(cfg["output_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
+    # ghi TOÀN BỘ log ra file (để gửi chẩn đoán), đồng thời vẫn hiện trên giao diện
+    (out_dir / "logs").mkdir(exist_ok=True)
+    log_path = out_dir / "logs" / f"nhat-ky-{datetime.now():%Y%m%d-%H%M%S}.txt"
+    _ui_log = log
+
+    def log(msg):
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"{datetime.now():%H:%M:%S} {msg}\n")
+        except OSError:
+            pass
+        _ui_log(msg)
+
     history_path = out_dir / "history.json"
     history = read_json(history_path, {})
     results = []
@@ -114,7 +127,7 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                     html = build_content_html(data)
                     weight = weight_grams(data) if cfg.get("fill_weight", True) else None
                     title = name_with_vendor(data["name"], opts.get("vendor")) if opts.get("vendor_in_name", True) else data["name"]
-                    payload = {"name": title, "sku": sku, "price": data.get("price"),
+                    payload = {"debug_dir": str(folder), "name": title, "sku": sku, "price": data.get("price"),
                                "content_html": html, "image_files": files, "weight_g": weight,
                                "variants": variants, "variant_image_idx": variant_idx}
                     write_json(folder / "product.json", {**data, "title": title, "weight_g": weight,

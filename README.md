@@ -213,6 +213,12 @@ chỉ khi tất cả đạt mới đóng gói và phát hành bản mới.
 
 ---
 
+### Gửi chẩn đoán khi gặp lỗi
+Mỗi lần chạy, ứng dụng tự lưu: log đầy đủ (`output/logs/nhat-ky-*.txt`), và với từng sản phẩm: trang nguồn
+(`trang_goc.html`), form Sapo trước khi Lưu (`sapo_form.html`, `sapo_truoc_khi_luu.png`), ảnh chụp sau khi Lưu
+(`sapo_sau_khi_luu.png`). Bấm **📦 Gói chẩn đoán** → tạo 1 file `output/chan-doan-*.zip` (không kèm ảnh sản phẩm)
+để gửi người hỗ trợ kiểm tra trên dữ liệu thật.
+
 ## 8. Lưu ý vận hành
 
 - Chỉ sao chép dữ liệu từ nhà cung cấp mà D&T **được phép phân phối/sử dụng nội dung**.

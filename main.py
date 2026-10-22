@@ -203,6 +203,21 @@ def gui(config_path=None):
         sync_sapo_url()
         start(lambda: pipeline.login_only(cfg, log))
 
+    def on_diag():
+        from dt_importer.diagnostics import build_zip
+        try:
+            z = build_zip(cfg["output_dir"])
+        except Exception as e:
+            messagebox.showerror("Gói chẩn đoán", f"Không tạo được file: {e}")
+            return
+        log(f"📦 Đã tạo gói chẩn đoán: {z}")
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(z.parent))
+        except Exception:
+            pass
+        messagebox.showinfo("Gói chẩn đoán", f"Đã tạo file:\n{z}\n\nGửi file này để được kiểm tra lỗi.")
+
     def on_continue():
         btn_continue.configure(state="disabled")
         resume.set()
@@ -216,6 +231,7 @@ def gui(config_path=None):
     btn_run.pack(side="left", padx=(0, 8))
     btn_login = ttk.Button(btns, text="🔑 Đăng nhập Sapo (lần đầu)", command=on_login)
     btn_login.pack(side="left", padx=(0, 8))
+    ttk.Button(btns, text="📦 Gói chẩn đoán", command=on_diag).pack(side="left", padx=(0, 8))
     btn_continue = ttk.Button(btns, text="Tiếp tục ▸", command=on_continue, state="disabled")
     btn_continue.pack(side="left", padx=(0, 8))
     btn_stop = ttk.Button(btns, text="⏹ Dừng", command=on_stop, state="disabled")

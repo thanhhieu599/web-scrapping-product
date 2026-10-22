@@ -175,6 +175,20 @@ check(len(dq.get("files", [])) == 2, f"Mỗi hình chỉ tải 1 lần: 2 ảnh 
 check([v["image"] for v in dq.get("variants", [])] == [0, 0, 1],
       f"Phiên bản dùng chung hình trỏ cùng 1 ảnh ({[v['image'] for v in dq.get('variants', [])]})")
 
+# Chẩn đoán: log ra file, form Sapo + ảnh chụp từng SP, gói ZIP
+print("\n=== CHẨN ĐOÁN ===")
+from dt_importer.diagnostics import build_zip
+import zipfile as _zf
+logs_dir = tmp / "out" / "logs"
+check(any(logs_dir.glob("nhat-ky-*.txt")), "Ghi log mỗi lần chạy ra file nhat-ky-*.txt")
+pdir = tmp / "out" / "m18-fqid-0x"
+check((pdir / "sapo_form.html").exists() and (pdir / "sapo_sau_khi_luu.png").exists() and (pdir / "trang_goc.html").exists(),
+      "Mỗi SP có trang nguồn, form Sapo trước khi Lưu, ảnh chụp sau khi Lưu")
+zp = build_zip(tmp / "out")
+names = _zf.ZipFile(zp).namelist()
+check(any(n.endswith("sapo_form.html") for n in names) and not any("/images/" in n for n in names),
+      f"Gói chẩn đoán ZIP đủ file, không kèm ảnh sản phẩm ({len(names)} file, {zp.stat().st_size // 1024} KB)")
+
 # Trang DANH MỤC kiểu Magento (như milwaukeetool.com.vn/jobsite-enhancement/storage): 2 trang, thẻ SP có mã + giá
 print("\n=== TRANG DANH MỤC → TỰ KÉO HẾT SẢN PHẨM ===")
 res = pipeline.run([f"{base}/san-pham/luu-tru.html"], dict(opts, dry_run=True, force=True), cfg)
