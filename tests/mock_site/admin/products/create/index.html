@@ -41,11 +41,14 @@ document.querySelectorAll('#dd li').forEach(li=>li.onclick=()=>{$('type').value=
 $('colq').addEventListener('input',e=>{const v=e.target.value.toLowerCase();$('cols').innerHTML=['PPE','Lưu trữ dụng cụ','Milwaukee'].filter(c=>c.toLowerCase().includes(v)).map(c=>`<label><input type=checkbox class=col value="${c}">${c}</label>`).join('')});
 const chosen=new Set();document.addEventListener('change',e=>{if(e.target.classList.contains('col'))e.target.checked?chosen.add(e.target.value):chosen.delete(e.target.value)});
 const tags=[];$('tagq').addEventListener('keydown',e=>{if(e.key==='Enter'){tags.push(e.target.value);e.target.value='';$('tags').textContent=tags.join(',')}});
-// Giả lập Sapo tải ảnh lên CHẬM: mỗi ảnh hiện ra sau 2,5 giây; window.FAIL_FIRST_UPLOAD = lần tải đầu bị mất
-let files=[]; let failFirst=window.FAIL_FIRST_UPLOAD?1:0;
-$('imgs').addEventListener('change',e=>{const fl=[...e.target.files]; if(!fl.length)return; if(window.FAIL_ALWAYS)return; if(failFirst){failFirst=0;return;}
- fl.forEach((f,k)=>setTimeout(()=>{files.push(f.name);const im=document.createElement('img');im.src=URL.createObjectURL(f);
-  im.style.width='80px';im.className='product-thumb';$('thumbs').appendChild(im);const es=$('empty');if(es)es.remove();},2500*(k+1)));});
+// Giả lập Sapo: mỗi lần chọn file → gửi TỪNG ảnh lên máy chủ (POST /__upload, ~1 giây/ảnh), xong mới hiện ảnh.
+// window.FAIL_FIRST_UPLOAD = lần chọn đầu bị mất; window.FAIL_ALWAYS = không nhận ảnh. uploadCalls = số lần chọn file.
+let files=[]; let failFirst=window.FAIL_FIRST_UPLOAD?1:0; window.uploadCalls=0;
+$('imgs').addEventListener('change',async e=>{const fl=[...e.target.files]; if(!fl.length)return; window.uploadCalls++;
+ if(window.FAIL_ALWAYS)return; if(failFirst){failFirst=0;return;}
+ for(const f of fl){const r=await fetch('/__upload',{method:'POST',body:f}); if(!r.ok)continue;
+  files.push(f.name);const im=document.createElement('img');im.src=URL.createObjectURL(f);
+  im.style.width='80px';im.className='product-thumb';$('thumbs').appendChild(im);const es=$('empty');if(es)es.remove();}});
 document.querySelector('.fr-element').addEventListener('input',e=>{$('content').value=e.target.innerHTML});
 
 const V=[];let urls=[];
@@ -65,7 +68,7 @@ function openImg(i){let sel=null;$('mc').innerHTML='<h4>Chọn ảnh phiên bả
 // Giả lập Froala: 2 trình soạn thảo, ô "Mô tả ngắn" đứng ĐẦU danh sách (dễ điền nhầm)
 const mk=el=>({el,html:{set(h){el.innerHTML=h;el.dispatchEvent(new Event('input',{bubbles:true}))},get(){return el.innerHTML}},events:{trigger(){}},undo:{saveStep(){}}});
 window.FroalaEditor={INSTANCES:[mk($('short')),mk(document.querySelector('.editor .fr-element'))]};
-$('save').onclick=()=>{const d={short:$('short').innerHTML,visible:$('vis1').checked,name:$('name').value,content:$('content').value,files,price:$('price').value,vat:$('vat').checked,sku:$('sku').value,
+$('save').onclick=()=>{const d={uploadCalls:window.uploadCalls,short:$('short').innerHTML,visible:$('vis1').checked,name:$('name').value,content:$('content').value,files,price:$('price').value,vat:$('vat').checked,sku:$('sku').value,
  ship:$('ship').checked,weight:$('weight').value,type:$('type').value,vendor:$('vendor').value,cols:[...chosen],tags,attr:$('attrname').value,variants:V.map(v=>({value:v.value,price:v.price,sku:v.sku,image:v.image}))};
  sessionStorage.setItem('saved',JSON.stringify(d));location.href='/admin/products/123.html'};
 </script></body></html>

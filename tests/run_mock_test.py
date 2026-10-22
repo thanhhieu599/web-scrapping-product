@@ -20,6 +20,17 @@ from dt_importer.utils import load_config  # noqa: E402
 
 PORT = 8765
 class Quiet(http.server.SimpleHTTPRequestHandler):
+    def do_POST(self):                                   # giả lập máy chủ Sapo nhận ảnh (~1 giây/ảnh)
+        import time as _t
+        n = int(self.headers.get("Content-Length") or 0)
+        self.rfile.read(n)
+        _t.sleep(1.0)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
     def log_message(self, *a):
         pass
 
@@ -188,6 +199,16 @@ zp = build_zip(tmp / "out")
 names = _zf.ZipFile(zp).namelist()
 check(any(n.endswith("sapo_form.html") for n in names) and not any("/images/" in n for n in names),
       f"Gói chẩn đoán ZIP đủ file, không kèm ảnh sản phẩm ({len(names)} file, {zp.stat().st_size // 1024} KB)")
+
+# Lỗi thật trên milwaukeetool.com.vn: ảnh chính chỉ nằm trong <img class="gallery-placeholder__image"> (FHX),
+# hoặc chỉ có og:image (FDDEXL) → trước đây ra "Ảnh gallery: 0" và lên Sapo không có ảnh
+print("\n=== ẢNH CHÍNH MAGENTO (gallery-placeholder) / og:image ===")
+saved.clear()
+pipeline.run([f"{base}/san-pham/m18-fhx.html", f"{base}/san-pham/m18-fddexl.html"], dict(opts, force=True), cfg)
+by = {x.get("sku"): x for x in saved}
+check(len(by.get("M18 FHX-0X0", {}).get("files", [])) == 1, f"FHX: lấy ảnh chính trong gallery-placeholder ({by.get('M18 FHX-0X0', {}).get('files')})")
+check(len(by.get("M18 FDDEXL-0 APJ", {}).get("files", [])) == 1, f"FDDEXL: lấy ảnh og:image ({by.get('M18 FDDEXL-0 APJ', {}).get('files')})")
+check(all(x.get("uploadCalls") == 1 for x in by.values()), f"Mỗi sản phẩm chỉ gửi ảnh 1 lần ({[x.get('uploadCalls') for x in by.values()]})")
 
 # Trang DANH MỤC kiểu Magento (như milwaukeetool.com.vn/jobsite-enhancement/storage): 2 trang, thẻ SP có mã + giá
 print("\n=== TRANG DANH MỤC → TỰ KÉO HẾT SẢN PHẨM ===")

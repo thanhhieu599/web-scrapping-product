@@ -143,7 +143,20 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                         log(f"  ✓ Đã lưu bản nháp tại {folder}")
                         rec["status"] = "scraped"
                     else:
-                        sapo_url = uploader.create_product(payload, opts)
+                        try:
+                            sapo_url = uploader.create_product(payload, opts)
+                        except Exception as e:
+                            if not _browser_closed(e):
+                                raise
+                            # cửa sổ Sapo bị đóng / trình duyệt bị tắt → mở lại và làm lại SP này (1 lần)
+                            log("  ! Trình duyệt Sapo bị đóng giữa chừng – đang mở lại và làm lại sản phẩm này...")
+                            try:
+                                uploader.close()
+                            except Exception:
+                                pass
+                            uploader = SapoUploader(pw, cfg, log, wait_user)
+                            uploader.ensure_login()
+                            sapo_url = uploader.create_product(payload, opts)
                         rec["warnings"] = list(getattr(uploader, "last_warnings", []) or [])
                         if not sapo_url:
                             log("  – Sản phẩm CHƯA được lưu trên Sapo (không ghi vào lịch sử, lần sau sẽ đăng lại)")
@@ -187,6 +200,11 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
     log(f"\n✅ Hoàn tất: {ok} thành công, {err} lỗi, {ns} chưa lưu, {len(results) - ok - err - ns} bỏ qua.")
     write_json(out_dir / f"ket-qua-{datetime.now():%Y%m%d-%H%M%S}.json", results)
     return results
+
+
+def _browser_closed(exc):
+    m = str(exc).lower()
+    return "has been closed" in m or "target closed" in m or "browser has disconnected" in m or "connection closed" in m
 
 
 def login_only(cfg, log=print):

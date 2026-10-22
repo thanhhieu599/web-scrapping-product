@@ -23,6 +23,17 @@ import main  # noqa: E402
 
 
 class Q(http.server.SimpleHTTPRequestHandler):
+    def do_POST(self):                                   # giả lập máy chủ Sapo nhận ảnh (~1 giây/ảnh)
+        import time as _t
+        n = int(self.headers.get("Content-Length") or 0)
+        self.rfile.read(n)
+        _t.sleep(1.0)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
     def log_message(self, *a):
         pass
 

@@ -407,41 +407,74 @@ class SapoUploader:
         except Exception:
             return -1, False
 
-    def _wait_images(self, want, timeout_s):
-        """Chờ khung 'Ảnh sản phẩm' hiện đủ `want` ảnh. Trả (số ảnh, còn ô 'Thả file ảnh' trống không).
-        Nếu sau 12 giây vẫn 0 ảnh mà KHÔNG còn ô trống → không đếm được (giao diện khác) → thôi chờ."""
-        start = time.time()
-        n, empty = self._count_images()
-        while n != -1 and n < want and time.time() - start < timeout_s:
-            if n == 0 and not empty and time.time() - start > 12:
-                return -1, False
-            self.page.wait_for_timeout(1000)
-            n, empty = self._count_images()
-        return n, empty
-
     def _upload_images(self, files):
-        """Tải ảnh lên Sapo, chờ Sapo nhận đủ ảnh (để không bấm Lưu khi ảnh chưa lên).
-        KHÔNG bao giờ dừng chờ người dùng; trả mô tả vấn đề (rỗng = ổn) để liệt kê cuối lần chạy."""
+        """Gửi ảnh lên Sapo ĐÚNG 1 LẦN (không bao giờ gửi lại → không trùng ảnh) rồi chờ Sapo tải xong.
+        Biết khi nào xong bằng cách theo dõi các lượt gửi file (POST/PUT) tới máy chủ Sapo – không phụ thuộc
+        giao diện. Trả mô tả vấn đề (rỗng = ổn) để liệt kê cuối lần chạy; KHÔNG dừng chờ người dùng."""
         if not files:
             self.log("    ! Không có ảnh để tải lên (xem các dòng 'Không tải được ảnh' ở trên)")
             return "không có ảnh"
         want = len(files)
-        timeout_s = max(45, 8 * want)                 # ảnh lớn / mạng chậm: tối đa 8 giây mỗi ảnh
-        self._send_files(files)
-        n, empty = self._wait_images(want, timeout_s)
-        if n == 0 and empty:                          # chắc chắn chưa có ảnh (ô 'Thả file ảnh' vẫn trống) → gửi lại 1 lần
-            self.log("    ! Sapo chưa nhận ảnh – tải lên lại...")
+        pending, done, failed = set(), [], []
+        last = {"t": time.time()}
+
+        def on_req(r):
+            if r.method in ("POST", "PUT") and r.resource_type in ("xhr", "fetch", "other"):
+                pending.add(r)
+                last["t"] = time.time()
+
+        def on_end(lst):
+            def h(r):
+                if r in pending:
+                    pending.discard(r)
+                    lst.append(r)
+                    last["t"] = time.time()
+            return h
+
+        fin, fail = on_end(done), on_end(failed)
+        self.page.on("request", on_req)
+        self.page.on("requestfinished", fin)
+        self.page.on("requestfailed", fail)
+        try:
             self._send_files(files)
-            n, empty = self._wait_images(want, timeout_s)
-        if n == -1:                                   # không đếm được → chờ thêm chút cho chắc rồi đi tiếp
-            self.page.wait_for_timeout(min(1500 * want, 15000))
-            self.log(f"    · Ảnh: đã gửi {want} ảnh")
-            return ""
-        if n >= want:
-            self.log(f"    · Ảnh: Sapo đã nhận đủ {n}/{want} ảnh")
-            return ""
-        self.log(f"    ! Ảnh: Sapo mới hiện {n}/{want} ảnh – vẫn lưu, hãy kiểm tra lại sản phẩm này")
-        return f"Sapo mới hiện {n}/{want} ảnh"
+            start = time.time()
+            timeout_s = max(60, 10 * want)
+            while time.time() - start < timeout_s:
+                self.page.wait_for_timeout(500)
+                idle = time.time() - last["t"]
+                if pending:
+                    continue                                  # đang tải
+                if done or failed:
+                    n, _ = self._count_images()
+                    if n >= want or idle > 4:                 # đủ ảnh trên form, hoặc hết lượt gửi 4 giây
+                        break
+                elif time.time() - start > 10:                # không có lượt gửi nào: Sapo giữ ảnh, gửi khi bấm Lưu
+                    break
+        finally:
+            for ev, h in (("request", on_req), ("requestfinished", fin), ("requestfailed", fail)):
+                try:
+                    self.page.remove_listener(ev, h)
+                except Exception:
+                    pass
+        n, _ = self._count_images()
+        bad = [r for r in done if self._status(r) >= 400] + failed
+        if pending:
+            self.log(f"    ! Ảnh: còn {len(pending)} lượt tải chưa xong sau thời gian chờ – vẫn lưu, hãy kiểm tra lại")
+            return f"ảnh có thể chưa tải xong ({len(pending)} lượt)"
+        if bad:
+            self.log(f"    ! Ảnh: {len(bad)} lượt tải lên Sapo bị lỗi – vẫn lưu, hãy kiểm tra lại")
+            return f"{len(bad)} lượt tải ảnh lên Sapo bị lỗi"
+        shown = f", thấy {n} ảnh trên form" if n > 0 else ""
+        self.log(f"    · Ảnh: đã gửi {want} ảnh (mỗi ảnh 1 lần){shown}")
+        return ""
+
+    @staticmethod
+    def _status(req):
+        try:
+            resp = req.response()
+            return resp.status if resp else 0
+        except Exception:
+            return 0
 
     def _ensure_checkbox(self, text, want=True):
         mark = "cb-" + re.sub(r"\W+", "", text.lower())[:20]

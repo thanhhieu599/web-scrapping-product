@@ -96,7 +96,9 @@ SCRAPE_JS = COMMON_JS + r"""
   }
 
   // ---------- MÃ SẢN PHẨM (chuỗi nhỏ ngay dưới tên) ----------
-  const SKU_RE = /^(?=.*\d)[A-Z0-9]{1,10}([-./][A-Z0-9]{1,12})+$|^(?=.*\d)(?=.*[A-Z])[A-Z0-9]{5,20}$/i;
+  // mã SP: 48-22-8450, ABC123, mã có khoảng trắng như Milwaukee "M18 FHX-0X0", hoặc dãy số 6–14 chữ số (vd Irwin 10505483)
+  const SKU_RE = /^(?=.*\d)[A-Z0-9]{1,10}([-./][A-Z0-9]{1,12})+$|^(?=.*\d)(?=.*[A-Z])[A-Z0-9]{5,20}$|^(?=.*\d)(?=.*[A-Z])[A-Z0-9]{1,12}(?:[ \-./][A-Z0-9]{1,12}){1,4}$|^\d{6,14}$/i;
+  const MONEY_RE = /^\d{1,3}([.,\s]\d{3})+$/;             // "2.940.000" (phần số của giá) – KHÔNG phải mã
   const cleanSku = t => norm(t).replace(/^(mã|mã sp|mã sản phẩm|sku|model)\s*[:：]?\s*/i, '');
   let sku = '';
   const skuEl = qs(sel.sku) || firstOf(['.product-info-main .product.attribute.sku .value',
@@ -106,7 +108,8 @@ SCRAPE_JS = COMMON_JS + r"""
     // chuỗi dạng mã (vd 48-22-8450) nằm giữa tên và giá trong khối thông tin
     const root = info || document.body;
     const cands = [...root.querySelectorAll('*')].filter(e => e.children.length === 0 && visible(e) && !inPopup(e))
-      .filter(e => { const t = cleanSku(e.textContent); return t.length <= 40 && SKU_RE.test(t) && !PRICE_RE.test(t); });
+      .filter(e => { const t = cleanSku(e.textContent); return t.length <= 40 && SKU_RE.test(t) && !PRICE_RE.test(t)
+        && !MONEY_RE.test(t) && !(priceEl && (priceEl.contains(e) || e.contains(priceEl))) && !e.closest('.price-box'); });
     const before = priceEl ? cands.filter(e => e.compareDocumentPosition(priceEl) & Node.DOCUMENT_POSITION_FOLLOWING) : cands;
     const pick = before[0] || cands[0];
     if (pick) sku = cleanSku(pick.textContent);
@@ -190,17 +193,25 @@ SCRAPE_JS = COMMON_JS + r"""
       break;
     }
   }
-  // 2) Trang khác: ảnh quanh khối thông tin, LOẠI ảnh rác (nút chat nổi, logo, icon, ảnh chờ, ảnh quá nhỏ)
-  const JUNK = /chat|messenger|zalo|facebook|fb[-_]|hotline|phone|logo|icon|heart|wish|badge|banner|placeholder|loading|spinner|lazy[-_]?load|blank|pixel|sprite|rating|star/i;
+  // 2) Trang khác: ảnh quanh khối thông tin, LOẠI ảnh rác (nút chat nổi, logo, icon, ảnh chờ, ảnh quá nhỏ).
+  //    Lưu ý: Magento đặt ẢNH CHÍNH THẬT trong <img class="gallery-placeholder__image"> – KHÔNG phải ảnh rác.
+  const CLASS_JUNK = /chat|messenger|zalo|facebook|fb[-_]|hotline|logo|icon|heart|wish|badge|rating|star|spinner|loading/i;
+  const SRC_JUNK = /\/placeholder\/|placeholder\.(png|jpe?g|gif|svg|webp)|loading|spinner|blank\.(gif|png)|pixel\.(gif|png)|sprite/i;
   const isFloating = el => { for (let n = el; n && n !== document.body; n = n.parentElement) {
       const pos = getComputedStyle(n).position; if (pos === 'fixed' || pos === 'sticky') return true; } return false; };
   const okImg = i => {
-    const tag = (i.className || '') + ' ' + (i.getAttribute('src') || '') + ' ' + (i.getAttribute('alt') || '') + ' '
-              + ((i.closest('[class]') || {}).className || '');
-    if (JUNK.test(tag) || isFloating(i) || i.closest('header, footer, nav, .modal, [role=dialog]')) return false;
+    const cls = ((i.className || '') + ' ' + (i.getAttribute('alt') || '') + ' ' + ((i.closest('[class]') || {}).className || ''))
+                  .replace(/gallery-placeholder\w*/gi, ' ');
+    const src = bestSrc(i) || '';
+    if (CLASS_JUNK.test(cls) || SRC_JUNK.test(src) || isFloating(i) || i.closest('header, footer, nav, .modal, [role=dialog]')) return false;
     const w = Math.max(i.naturalWidth || 0, i.width || 0), h = Math.max(i.naturalHeight || 0, i.height || 0);
     return !(w && h && (w < 40 || h < 40));
   };
+  if (!galleryImages.length) {
+    const main = qsa(document, '.gallery-placeholder__image, [data-gallery-role=gallery-placeholder] img, .fotorama__stage img, .product.media img')
+                   .filter(okImg).map(bestSrc).filter(Boolean);
+    galleryImages = [...new Set(main)];
+  }
   if (!galleryImages.length) {
     const box = qs('.product.media, .product-media, .product-gallery, .woocommerce-product-gallery, [class*=product-image], [class*=gallery]');
     if (box && !(info && box.contains(info))) galleryImages = [...box.querySelectorAll('img')].filter(okImg).map(bestSrc).filter(Boolean);
@@ -212,6 +223,12 @@ SCRAPE_JS = COMMON_JS + r"""
       if (imgs.length) { galleryImages = imgs.filter(okImg).map(bestSrc).filter(Boolean); break; }
       n = n.parentElement;
     }
+  }
+  // 3) Dự phòng: ảnh đại diện web khai báo cho Facebook/Google (og:image, itemprop=image) – trang SP nào cũng có
+  if (!galleryImages.length) {
+    const metas = [...document.querySelectorAll('meta[property="og:image"], meta[name="og:image"], meta[itemprop=image], link[rel=image_src]')]
+      .map(m => abs(m.getAttribute('content') || m.getAttribute('href'))).filter(u => u && !SRC_JUNK.test(u));
+    galleryImages = [...new Set(metas)];
   }
 
   // ---------- ĐẶC ĐIỂM ----------

@@ -28,6 +28,17 @@ hits = {}
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    def do_POST(self):                                   # giả lập máy chủ Sapo nhận ảnh (~1 giây/ảnh)
+        import time as _t
+        n = int(self.headers.get("Content-Length") or 0)
+        self.rfile.read(n)
+        _t.sleep(1.0)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
     def log_message(self, *a):
         pass
 
@@ -170,20 +181,35 @@ sapo_mod.SapoUploader._wait_form = _orig_wait
 check(res and res[0]["status"] == "error" and "Tên sản phẩm" in res[0].get("error", ""), f"Báo lỗi rõ ràng: {res and res[0].get('error')!r}")
 check(list((Path(cfg["output_dir"]) / "logs").glob("loi-*.png")), "Có ảnh chụp màn hình lỗi trong output/logs")
 
-print("=== 10. Sapo làm mất lần tải ảnh đầu → tự tải lại ===")
+print("=== 10. Sapo làm mất lần chọn ảnh đầu → KHÔNG gửi lại (tránh trùng ảnh), vẫn tự Lưu ===")
 res, _ = run([f"{base}/san-pham/hop-dung-dung-cu-8425.html"], cfg_=dict(cfg, sapo_admin_url=f"{base}/admin4"))
-check(any("tải lên lại" in l for l in logs), "Phát hiện Sapo chưa nhận ảnh và tải lại")
-check(res and res[0]["status"] == "created" and saved and len(saved[0].get("files", [])) == 3,
-      f"Sau khi tải lại: đủ 3 ảnh trên Sapo ({saved and saved[0].get('files')})")
+check(not any("tải lên lại" in l for l in logs) and saved and saved[0].get("uploadCalls") == 1,
+      f"Chỉ gửi ảnh 1 lần, không gửi lại ({saved and saved[0].get('uploadCalls')})")
+check(res and res[0]["status"] == "created", "Vẫn tự Lưu và chạy tiếp")
 
-print("=== 11. Sapo không hiện ảnh → KHÔNG dừng chờ, vẫn tự Lưu và báo cuối lần chạy ===")
+print("=== 11. Sapo không nhận ảnh → KHÔNG dừng chờ, KHÔNG gửi lại, vẫn tự Lưu ===")
 asked = []
 logs.clear(); saved.clear()
 res = pipeline.run([f"{base}/san-pham/hop-dung-dung-cu-8450.html"], OPTS, dict(cfg, sapo_admin_url=f"{base}/admin5"), log,
                    wait_user=lambda msg: asked.append(msg))
 check(not asked, "Không dừng chờ người dùng")
-check(saved and res and res[0]["status"] == "created", f"Tự bấm Lưu và chạy tiếp ({res and res[0]['status']})")
-check(any("cần kiểm tra lại" in l for l in logs), "Cuối lần chạy liệt kê sản phẩm cần kiểm tra ảnh")
+check(saved and res and res[0]["status"] == "created" and saved[0].get("uploadCalls") == 1,
+      f"Tự Lưu, chỉ gửi ảnh 1 lần ({res and res[0]['status']}, {saved and saved[0].get('uploadCalls')})")
+
+print("=== 12. Trình duyệt Sapo bị đóng giữa chừng → tự mở lại và làm lại sản phẩm ===")
+_orig_pick = sapo_mod.SapoUploader._pick_collections
+_state = {"n": 0}
+def _crash_once(self, names):
+    if _state["n"] == 0:
+        _state["n"] = 1
+        self.ctx.close()                       # giống người dùng lỡ đóng cửa sổ Sapo
+        self.page.wait_for_timeout(100)        # → TargetClosedError như log thật
+    return _orig_pick(self, names)
+sapo_mod.SapoUploader._pick_collections = _crash_once
+res, _ = run([f"{base}/san-pham/hop-dung-dung-cu-8424.html", f"{base}/san-pham/hop-dung-dung-cu-8425.html"])
+sapo_mod.SapoUploader._pick_collections = _orig_pick
+check(any("mở lại" in l for l in logs), "Phát hiện trình duyệt bị đóng và mở lại")
+check(res and [r["status"] for r in res] == ["created", "created"], f"Cả 2 sản phẩm vẫn được lưu ({[r['status'] for r in res]})")
 
 srv.shutdown()
 shutil.rmtree(tmp, ignore_errors=True)
