@@ -9,7 +9,9 @@
  <div contenteditable="true" class="fr-element" style="min-height:120px;border:1px solid #ccc"></div><textarea id="content" style="display:none"></textarea></div>
  <a href="#">Thêm mô tả ngắn</a>
  <div>Mô tả ngắn</div><div class="editor2"><div contenteditable="true" class="fr-element" id="short" style="min-height:60px;border:1px solid #ccc"></div></div></div>
-<div class="card"><h3>Ảnh sản phẩm</h3><a href="#">Thêm ảnh sản phẩm</a><input type="file" multiple accept="image/*" style="display:none" id="imgs"><div id="thumbs"></div></div>
+<div class="card"><h3>Ảnh sản phẩm</h3><a href="#">Thêm ảnh sản phẩm</a><input type="file" multiple accept="image/*" style="display:none" id="imgs">
+ <div id="empty" class="empty-state"><img src="/img/p5_thumb.jpg" class="illustration"><p>Thả file ảnh vào đây để thêm mới</p></div>
+ <div id="thumbs"></div></div>
 <div class="card"><h3>Giá sản phẩm</h3>
  <div><label>Giá</label><div><span>₫</span><input id="price" value="0"></div></div>
  <div><label>Giá so sánh</label><input id="cmp"></div>
@@ -38,7 +40,11 @@ document.querySelectorAll('#dd li').forEach(li=>li.onclick=()=>{$('type').value=
 $('colq').addEventListener('input',e=>{const v=e.target.value.toLowerCase();$('cols').innerHTML=['PPE','Lưu trữ dụng cụ','Milwaukee'].filter(c=>c.toLowerCase().includes(v)).map(c=>`<label><input type=checkbox class=col value="${c}">${c}</label>`).join('')});
 const chosen=new Set();document.addEventListener('change',e=>{if(e.target.classList.contains('col'))e.target.checked?chosen.add(e.target.value):chosen.delete(e.target.value)});
 const tags=[];$('tagq').addEventListener('keydown',e=>{if(e.key==='Enter'){tags.push(e.target.value);e.target.value='';$('tags').textContent=tags.join(',')}});
-let files=[];$('imgs').addEventListener('change',e=>{files=files.concat([...e.target.files].map(f=>f.name));$('thumbs').textContent=files.join(',')});
+// Giả lập Sapo tải ảnh lên CHẬM: mỗi ảnh hiện ra sau 2,5 giây; window.FAIL_FIRST_UPLOAD = lần tải đầu bị mất
+let files=[]; let failFirst=window.FAIL_FIRST_UPLOAD?1:0;
+$('imgs').addEventListener('change',e=>{const fl=[...e.target.files]; if(!fl.length)return; if(window.FAIL_ALWAYS)return; if(failFirst){failFirst=0;return;}
+ fl.forEach((f,k)=>setTimeout(()=>{files.push(f.name);const im=document.createElement('img');im.src=URL.createObjectURL(f);
+  im.style.width='80px';im.className='product-thumb';$('thumbs').appendChild(im);const es=$('empty');if(es)es.remove();},2500*(k+1)));});
 document.querySelector('.fr-element').addEventListener('input',e=>{$('content').value=e.target.innerHTML});
 
 const V=[];let urls=[];

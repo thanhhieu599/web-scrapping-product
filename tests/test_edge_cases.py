@@ -54,6 +54,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.path = "/admin/products/create/index.html"
         if path.startswith("/admin3/products/create"):        # trang lỗi: không có form
             self.path = "/admin2/index.html"
+        for prefix, flag in (("/admin4/products/create", "FAIL_FIRST_UPLOAD"), ("/admin5/products/create", "FAIL_ALWAYS")):
+            if path.startswith(prefix):                         # Sapo làm mất lần tải ảnh đầu / không nhận ảnh
+                html = (SITE / "admin/products/create/index.html").read_text(encoding="utf-8")
+                html = html.replace("<head>", f"<head><script>window.{flag}=1</script>", 1).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(html)))
+                self.end_headers()
+                self.wfile.write(html)
+                return
         return super().do_GET()
 
 
@@ -98,7 +108,7 @@ def run(urls, cfg_=None, log_=log, **o):
     logs.clear()
     saved.clear()
     t = time.time()
-    res = pipeline.run(urls, dict(OPTS, **o), cfg_ or cfg, log_)
+    res = pipeline.run(urls, dict(OPTS, **o), cfg_ or cfg, log_, wait_user=lambda msg: logs.append("CHỜ: " + msg))
     return res, time.time() - t
 
 
@@ -159,6 +169,20 @@ res, secs = run([f"{base}/san-pham/hop-dung-dung-cu-8450.html"], cfg_=cfg3)
 sapo_mod.SapoUploader._wait_form = _orig_wait
 check(res and res[0]["status"] == "error" and "Tên sản phẩm" in res[0].get("error", ""), f"Báo lỗi rõ ràng: {res and res[0].get('error')!r}")
 check(list((Path(cfg["output_dir"]) / "logs").glob("loi-*.png")), "Có ảnh chụp màn hình lỗi trong output/logs")
+
+print("=== 10. Sapo làm mất lần tải ảnh đầu → tự tải lại ===")
+res, _ = run([f"{base}/san-pham/hop-dung-dung-cu-8425.html"], cfg_=dict(cfg, sapo_admin_url=f"{base}/admin4"))
+check(any("tải lên lại" in l for l in logs), "Phát hiện Sapo chưa nhận ảnh và tải lại")
+check(res and res[0]["status"] == "created" and saved and len(saved[0].get("files", [])) == 3,
+      f"Sau khi tải lại: đủ 3 ảnh trên Sapo ({saved and saved[0].get('files')})")
+
+print("=== 11. Sapo không nhận ảnh nào → KHÔNG tự lưu sản phẩm thiếu ảnh ===")
+asked = []
+logs.clear(); saved.clear()
+res = pipeline.run([f"{base}/san-pham/hop-dung-dung-cu-8450.html"], OPTS, dict(cfg, sapo_admin_url=f"{base}/admin5"), log,
+                   wait_user=lambda msg: asked.append(msg))
+check(asked and "ảnh" in asked[0], "Dừng lại báo người dùng thêm ảnh")
+check(not saved and res and res[0]["status"] == "not_saved", f"Không tự lưu sản phẩm thiếu ảnh ({res and res[0]['status']})")
 
 srv.shutdown()
 shutil.rmtree(tmp, ignore_errors=True)

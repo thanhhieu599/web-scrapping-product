@@ -108,7 +108,9 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                     if scraper.page.url.split("#")[0] == url.split("#")[0]:
                         scraper.save_source_html(folder / "trang_goc.html")
                     (folder / "noi_dung.html").write_text(html, encoding="utf-8")
-                    rec.update(sku=sku, name=data["name"], folder=str(folder))
+                    rec.update(sku=sku, name=data["name"], folder=str(folder), images=len(files))
+                    if not files:
+                        log("  ⚠ KHÔNG lấy được ảnh nào cho sản phẩm này (xem các dòng 'Không tải được ảnh' ở trên)")
 
                     if opts.get("dry_run"):
                         log(f"  ✓ Đã lưu bản nháp tại {folder}")
@@ -143,6 +145,11 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
 
     ok = sum(r["status"] in ("created", "scraped") for r in results)
     err = sum(r["status"] == "error" for r in results)
+    no_img = [r for r in results if r["status"] in ("created", "scraped") and r.get("images") == 0]
+    if no_img:
+        log(f"\n⚠ {len(no_img)} sản phẩm KHÔNG có ảnh – cần thêm ảnh bằng tay trên Sapo:")
+        for r in no_img:
+            log(f"   - {r.get('sku') or ''} {r.get('name') or ''}  ({r['url']})")
     ns = sum(r["status"] == "not_saved" for r in results)
     log(f"\n✅ Hoàn tất: {ok} thành công, {err} lỗi, {ns} chưa lưu, {len(results) - ok - err - ns} bỏ qua.")
     write_json(out_dir / f"ket-qua-{datetime.now():%Y%m%d-%H%M%S}.json", results)

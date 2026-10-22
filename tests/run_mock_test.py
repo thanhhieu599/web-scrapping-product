@@ -144,9 +144,9 @@ check(rws.get("Chiều dài (mm)") == ["610"] and rws.get("Khả năng chịu tr
 check(one["spec"]["images"] == [one["spec"]["images"][0]] and bool(one["spec"]["images"][0]), "1 model: ảnh trên đúng cột model")
 check(not any("(1)" in str(r) for r in one["spec"]["rows"]), "1 model: bỏ dòng '48-22-8420 (1)'")
 sizes = [Image.open(f).size for f in one["image_files"]]
-check(len(sizes) == 2 and all(sz == (1200, 900) for sz in sizes), f"1 model Magento: lấy 2 ảnh thật gốc từ gallery ({sizes})")
+check(len(sizes) == 10 and all(sz == (1000, 800) for sz in sizes), f"1 model Magento: lấy đủ 10 ảnh thật gốc từ gallery ({len(sizes)})")
 d1 = next((x for x in saved if x.get("sku") == "48-22-8420"), {})
-check(len(d1.get("files", [])) == 2, f"1 model Magento → Sapo: tải lên 2 ảnh, không có ảnh chờ/nút chat ({d1.get('files')})")
+check(len(d1.get("files", [])) == 10, f"1 model Magento → Sapo: ĐỦ 10 ảnh đã lên Sapo trước khi Lưu ({len(d1.get('files', []))})")
 html1 = (tmp / "out" / "48-22-8420" / "noi_dung.html").read_text(encoding="utf-8")
 check(html1.count("<th style") == 2, "1 model: bảng nội dung có đúng 2 cột (Thông số | 48-22-8420)")
 gen = json.loads((tmp / "out" / "48-22-8099" / "product.json").read_text(encoding="utf-8"))
