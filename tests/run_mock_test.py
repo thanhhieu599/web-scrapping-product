@@ -153,6 +153,28 @@ gen = json.loads((tmp / "out" / "48-22-8099" / "product.json").read_text(encodin
 gsz = [Image.open(f).size for f in gen["image_files"]]
 check(gsz == [(800, 600)], f"1 model web thường: chỉ lấy ảnh sản phẩm thật, bỏ ảnh chờ/nút chat/ảnh nhỏ ({gsz})")
 
+# Web chặn ẢNH GỐC + ô quy cách chỉ có ảnh nhỏ 60px → phải lấy ảnh lớn cùng tên trong gallery (lỗi thiếu ảnh)
+print("\n=== ẢNH GỐC BỊ CHẶN, Ô QUY CÁCH CHỈ CÓ ẢNH NHỎ ===")
+saved.clear()
+pipeline.run([f"{base}/san-pham/m18-fid3.html"], dict(opts, force=True, variant_attr="Model"), cfg)
+fid = json.loads((tmp / "out" / "m18-fid3-0" / "product.json").read_text(encoding="utf-8"))
+fsz = [Image.open(f).size for f in fid["image_files"]]
+check(fsz == [(1100, 1100), (1100, 1100)], f"Lấy ảnh lớn cùng tên trong gallery thay vì bỏ trống ({fsz})")
+dd = saved[0] if saved else {}
+check(len(dd.get("files", [])) == 2 and [v["image"] for v in dd.get("variants", [])] == [0, 1],
+      f"Sapo có đủ 2 ảnh, gán đúng từng phiên bản ({dd.get('files')}, {[v['image'] for v in dd.get('variants', [])]})")
+c2 = dd.get("content", "")
+check("border-bottom" not in c2 and "#c8102e" not in c2 and "color:#000" in c2, "Nội dung: chữ màu đen, không còn gạch đỏ dưới tiêu đề")
+
+# 2 phiên bản dùng CHUNG 1 hình (khác link, khác kích thước) → chỉ tải 1 lần, 2 phiên bản cùng trỏ 1 ảnh
+print("\n=== ẢNH TRÙNG GIỮA CÁC PHIÊN BẢN ===")
+saved.clear()
+pipeline.run([f"{base}/san-pham/m18-fqid.html"], dict(opts, force=True, variant_attr="Model"), cfg)
+dq = saved[0] if saved else {}
+check(len(dq.get("files", [])) == 2, f"Mỗi hình chỉ tải 1 lần: 2 ảnh cho 3 phiên bản ({dq.get('files')})")
+check([v["image"] for v in dq.get("variants", [])] == [0, 0, 1],
+      f"Phiên bản dùng chung hình trỏ cùng 1 ảnh ({[v['image'] for v in dq.get('variants', [])]})")
+
 # Trang DANH MỤC kiểu Magento (như milwaukeetool.com.vn/jobsite-enhancement/storage): 2 trang, thẻ SP có mã + giá
 print("\n=== TRANG DANH MỤC → TỰ KÉO HẾT SẢN PHẨM ===")
 res = pipeline.run([f"{base}/san-pham/luu-tru.html"], dict(opts, dry_run=True, force=True), cfg)

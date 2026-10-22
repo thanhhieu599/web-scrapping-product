@@ -100,5 +100,22 @@ eq(pick_images(d, "gallery"), ["g1", "v1"], "gallery")
 eq(pick_images(d, "both"), ["v1", "v2", "g1"], "both (không trùng)")
 eq(pick_images({"variant_images": [], "gallery_images": ["g1"]}, "quycach"), ["g1"], "không có ảnh quy cách → dùng gallery")
 
+print("=== Nhận diện ảnh trùng (cùng hình khác kích thước) ===")
+from PIL import Image as _I, ImageDraw as _D
+from dt_importer.scraper import _image_signature, _same_image
+_a = _I.new("RGB", (1200, 900), (255, 255, 255)); _D.Draw(_a).rectangle([200, 200, 900, 700], fill=(200, 20, 40))
+_b = _a.resize((600, 450))                                                    # cùng hình, nhỏ hơn
+_c = _I.new("RGB", (1200, 900), (255, 255, 255)); _D.Draw(_c).rectangle([200, 200, 900, 700], fill=(30, 30, 30))   # khác màu
+_d = _I.new("RGB", (1200, 900), (255, 255, 255)); _D.Draw(_d).rectangle([500, 100, 700, 800], fill=(200, 20, 40))  # khác dáng
+eq(_same_image(_image_signature(_a), _image_signature(_b)), True, "cùng hình khác kích thước → trùng")
+eq(_same_image(_image_signature(_a), _image_signature(_c)), False, "khác màu → không trùng")
+eq(_same_image(_image_signature(_a), _image_signature(_d)), False, "khác hình dáng → không trùng")
+eq(_same_image(_image_signature(_a), _image_signature(_a.resize((900, 900)))), False, "khác tỉ lệ khung → không trùng")
+_e = _I.new("RGB", (1200, 900), (255, 255, 255)); _D.Draw(_e).rectangle([200, 200, 900, 700], fill=(160, 20, 30))  # chỉ khác sắc đỏ
+eq(_same_image(_image_signature(_a), _image_signature(_e)), False, "2 sản phẩm chỉ khác sắc đỏ → KHÔNG gộp nhầm")
+import io as _io
+_buf = _io.BytesIO(); _a.save(_buf, "JPEG", quality=40)
+eq(_same_image(_image_signature(_a), _image_signature(_I.open(_io.BytesIO(_buf.getvalue())))), True, "cùng hình nén JPEG mạnh → vẫn nhận là trùng")
+
 print("\nKẾT QUẢ:", "TẤT CẢ ĐẠT" if not fails else f"{fails} LỖI")
 sys.exit(1 if fails else 0)

@@ -86,14 +86,28 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
 
                     folder = product_folder(out_dir, data)
                     strip = [x.lower() for x in cfg.get("image_url_strip_params", [])]
-                    if variants and cfg.get("image_mode", "quycach") == "quycach":
-                        imgs = [v["image"] for v in variants if v.get("image")]   # ảnh sản phẩm theo đúng thứ tự phiên bản
+                    variant_mode = bool(variants) and cfg.get("image_mode", "quycach") == "quycach"
+                    if variant_mode:
+                        imgs = [v.get("image") for v in variants]          # đúng thứ tự phiên bản (có thể trùng hình)
                     else:
                         imgs = pick_images(data, cfg.get("image_mode", "quycach"))
-                    files = scraper.download_images(imgs, folder / "images", int(cfg.get("max_images", 15)))
-                    variant_imgs = len(files) if variants and len(files) == len(variants) else 0
-                    if variants and not variant_imgs:
-                        log("  ! Số ảnh tải được không khớp số phiên bản → không tự gán ảnh cho phiên bản")
+                    # ảnh cùng tên cỡ lớn trong dữ liệu trang (gallery, phiên bản) dùng thay ảnh nhỏ / ảnh gốc bị chặn
+                    alternates = list(data.get("gallery_images") or []) + [v.get("image") for v in variants] \
+                        + list(data.get("variant_images") or [])
+                    max_img = int(cfg.get("max_images", 15))
+                    files = scraper.download_images(imgs, folder / "images", max_img, alternates,
+                                                    keep_small="always" if variant_mode else "if_none")
+                    # ảnh của từng phiên bản = vị trí trong danh sách ảnh đã tải (hình trùng dùng chung 1 ảnh)
+                    variant_idx = list(scraper.last_index) if variant_mode else [None] * len(variants)
+                    if not files:                       # bộ ảnh đã chọn hỏng hết → thử bộ ảnh còn lại
+                        others = [u for u in (data.get("gallery_images") or []) + (data.get("variant_images") or [])
+                                  if u and u not in imgs]
+                        if others:
+                            log("  ! Không lấy được ảnh nào – thử bộ ảnh khác trên trang...")
+                            files = scraper.download_images(others, folder / "images", max_img, alternates)
+                            variant_idx = [None] * len(variants)
+                    if variants and not any(k is not None for k in variant_idx):
+                        log("  ! Không xác định được ảnh riêng của từng phiên bản → không tự gán ảnh cho phiên bản")
                     # ảnh trong mô tả: dùng link ảnh gốc của nhà cung cấp
                     data["spec"]["images"] = [upgrade_image_url(u, strip) if u else "" for u in data["spec"].get("images", [])]
                     data["feature_images"] = [upgrade_image_url(u, strip) for u in data.get("feature_images", [])]
@@ -102,7 +116,7 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                     title = name_with_vendor(data["name"], opts.get("vendor")) if opts.get("vendor_in_name", True) else data["name"]
                     payload = {"name": title, "sku": sku, "price": data.get("price"),
                                "content_html": html, "image_files": files, "weight_g": weight,
-                               "variants": variants, "variant_images": variant_imgs}
+                               "variants": variants, "variant_image_idx": variant_idx}
                     write_json(folder / "product.json", {**data, "title": title, "weight_g": weight,
                                                          "image_files": files, "variants": variants})
                     if scraper.page.url.split("#")[0] == url.split("#")[0]:

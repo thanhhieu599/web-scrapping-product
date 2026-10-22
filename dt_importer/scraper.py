@@ -541,6 +541,7 @@ class Scraper:
         self.page = self.ctx.new_page()
         self.img_page = None
         self.last_fetch_url = None
+        self.last_index = []
 
     def close(self):
         self.ctx.close()
@@ -707,51 +708,101 @@ class Scraper:
             last = str(e).splitlines()[0]
         raise RuntimeError(last)
 
-    def download_images(self, urls, folder, max_images=15):
+    def download_images(self, urls, folder, max_images=15, alternates=None, keep_small="if_none"):
+        """Tải ảnh về (JPG nền trắng), MỖI HÌNH CHỈ 1 LẦN.
+        - Mỗi ảnh thử lần lượt: ảnh gốc → ảnh CÙNG TÊN cỡ lớn trong dữ liệu trang (gallery...) → link ban đầu.
+        - Ảnh nhỏ (< 100px, vd ảnh thu nhỏ ô quy cách): keep_small="always" → vẫn dùng (ảnh phiên bản);
+          "if_none" → chỉ dùng khi không có ảnh lớn nào.
+        - Hình trùng (cùng hình dù khác link/kích thước) chỉ giữ 1; self.last_index[i] = vị trí ảnh của urls[i]
+          trong danh sách trả về (None nếu không có) – dùng để gán ảnh cho từng phiên bản."""
         from PIL import Image
         folder = Path(folder)
         folder.mkdir(parents=True, exist_ok=True)
         strip = [s.lower() for s in self.cfg.get("image_url_strip_params", [])]
         max_side = int(self.cfg.get("image_max_side", 2000))
-        files, seen = [], set()
-        for i, u in enumerate(urls[:max_images], 1):
-            errs = []
-            for cand in dict.fromkeys([upgrade_image_url(u, strip), u]):
+        base = lambda u: (u or "").split("?")[0].split("#")[0].rsplit("/", 1)[-1].lower()
+        alts = {}
+        for a in alternates or []:
+            if a:
+                alts.setdefault(base(a), [])
+                if a not in alts[base(a)]:
+                    alts[base(a)].append(a)
+        files, sigs, digests = [], [], set()
+        index = [None] * len(urls)
+        pending_small = []                                   # (vị trí url, ảnh) – ảnh nhỏ chờ quyết định
+
+        def keep(pos, img, digest):
+            sig = _image_signature(img)
+            for k, other in enumerate(sigs):                 # cùng hình (khác link/kích thước) → dùng lại ảnh đã có
+                if _same_image(sig, other):
+                    index[pos] = k
+                    return False
+            path = folder / f"{len(files) + 1:02d}.jpg"
+            self._save_jpg(img, path, max_side)
+            files.append(str(path))
+            sigs.append(sig)
+            digests.add(digest)
+            index[pos] = len(files) - 1
+            return True
+
+        for pos, u in enumerate(urls[:max_images]):
+            if not u:
+                continue
+            errs, best_small, got = [], None, False
+            for cand in dict.fromkeys([upgrade_image_url(u, strip)] + alts.get(base(u), []) + [u]):
                 try:
                     self.last_fetch_url = cand
                     raw = self._fetch_bytes(cand)
-                    # loại ảnh rác: ảnh chờ (placeholder), ảnh quá nhỏ, ảnh một màu, ảnh trùng trong cùng SP
                     if "placeholder" in (self.last_fetch_url or "").lower():
                         raise ValueError("web trả về ảnh chờ (placeholder) thay vì ảnh thật")
                     digest = hashlib.md5(raw).hexdigest()
-                    if digest in seen:
-                        raise ValueError("trùng ảnh đã lấy")
                     img = Image.open(io.BytesIO(raw))
                     img.load()
-                    if min(img.size) < 100:
-                        raise ValueError(f"ảnh quá nhỏ {img.size[0]}x{img.size[1]}px (icon/nút)")
                     lo, hi = img.convert("L").getextrema()
                     if hi - lo < 8:
                         raise ValueError("ảnh trống một màu")
-                    seen.add(digest)
-                    if img.mode not in ("RGB", "L"):
-                        rgba = img.convert("RGBA")
-                        bg = Image.new("RGB", img.size, (255, 255, 255))
-                        bg.paste(rgba, mask=rgba.split()[-1])
-                        img = bg
-                    if max(img.size) > max_side:
-                        img.thumbnail((max_side, max_side))
-                    path = folder / f"{i:02d}.jpg"
-                    img.convert("RGB").save(path, "JPEG", quality=92)
-                    if min(img.size) < 300:
-                        self.log(f"    ! Ảnh {i} nhỏ ({img.size[0]}x{img.size[1]}px)")
-                    files.append(str(path))
+                    if min(img.size) < 100:
+                        if min(img.size) >= 40 and (not best_small or img.size[0] * img.size[1] > best_small[0].size[0] * best_small[0].size[1]):
+                            best_small = (img, digest)
+                        raise ValueError(f"ảnh nhỏ {img.size[0]}x{img.size[1]}px")
+                    if keep(pos, img, digest) and min(img.size) < 300:
+                        self.log(f"    ! Ảnh {pos + 1} nhỏ ({img.size[0]}x{img.size[1]}px)")
+                    got = True
                     break
                 except Exception as e:  # thử link khác
-                    errs.append(str(e).splitlines()[0][:120])
+                    errs.append(str(e).splitlines()[0][:100])
+            if got:
+                continue
+            if best_small:
+                if keep_small == "always":
+                    keep(pos, *best_small)
+                    self.log(f"    ! Ảnh {pos + 1}: chỉ có ảnh nhỏ {best_small[0].size[0]}x{best_small[0].size[1]}px – vẫn dùng")
+                else:
+                    pending_small.append((pos, best_small))
             else:
-                self.log(f"    ! Không tải được ảnh {i}: {u} ({'; '.join(errs)})")
+                self.log(f"    ! Không tải được ảnh {pos + 1}: {u} ({'; '.join(errs)})")
+        if not files and pending_small:                      # không có ảnh lớn nào → dùng ảnh nhỏ còn hơn bỏ trống
+            for pos, (img, digest) in pending_small:
+                keep(pos, img, digest)
+            self.log(f"    ! Chỉ có ảnh nhỏ cho sản phẩm này – vẫn dùng {len(files)} ảnh")
+        dup = sum(1 for i, k in enumerate(index) if k is not None and index.index(k) != i)
+        if dup:
+            self.log(f"    · Bỏ {dup} ảnh trùng (cùng hình) – mỗi hình chỉ tải 1 lần")
+        self.last_index = index
         return files
+
+    @staticmethod
+    def _save_jpg(img, path, max_side):
+        from PIL import Image
+        if img.mode not in ("RGB", "L"):
+            rgba = img.convert("RGBA")
+            bg = Image.new("RGB", img.size, (255, 255, 255))
+            bg.paste(rgba, mask=rgba.split()[-1])
+            img = bg
+        if max(img.size) > max_side:
+            img = img.copy()
+            img.thumbnail((max_side, max_side))
+        img.convert("RGB").save(path, "JPEG", quality=92)
 
     def save_source_html(self, path):
         try:
@@ -769,6 +820,27 @@ def pick_images(data, mode):
     else:  # quycach (chỉ 1 ô quy cách = SP 1 model → dùng ảnh gallery thật nếu có)
         imgs = v if len(v) >= 2 or not g else g
     return list(dict.fromkeys(imgs))
+
+
+def _image_signature(img):
+    """Dấu vân tay hình ảnh: thu nhỏ về 32x32 màu (nền trắng) → so sánh được dù khác kích thước/định dạng."""
+    from PIL import Image
+    im = img
+    if im.mode not in ("RGB", "L"):
+        rgba = im.convert("RGBA")
+        bg = Image.new("RGB", im.size, (255, 255, 255))
+        bg.paste(rgba, mask=rgba.split()[-1])
+        im = bg
+    w, h = im.size
+    return (round(w / h, 2), im.convert("RGB").resize((32, 32)).tobytes())
+
+
+def _same_image(a, b, tol=1.5):
+    """Cùng hình nếu tỉ lệ khung gần bằng và chênh lệch màu trung bình rất nhỏ."""
+    if abs(a[0] - b[0]) > 0.05:
+        return False
+    da, db = a[1], b[1]
+    return sum(abs(x - y) for x, y in zip(da, db)) / len(da) < tol
 
 
 def product_folder(output_dir, data):

@@ -571,7 +571,7 @@ class SapoUploader:
 
         issues = []
         if opts.get("variant_attr") and len(p.get("variants") or []) >= 2:
-            issues += self._add_variants(opts["variant_attr"], p["variants"], int(p.get("variant_images") or 0))
+            issues += self._add_variants(opts["variant_attr"], p["variants"], p.get("variant_image_idx") or [])
             for msg in issues:
                 self.log(f"    ! {msg}")
 
@@ -632,7 +632,7 @@ class SapoUploader:
             return True
         return False
 
-    def _add_variants(self, attr_name, variants, n_images):
+    def _add_variants(self, attr_name, variants, img_idx):
         """Tạo thuộc tính + giá trị, rồi đặt Giá / SKU / Ảnh cho từng phiên bản. Trả danh sách việc chưa làm được."""
         issues = []
         values = [v["value"] for v in variants]
@@ -702,7 +702,8 @@ class SapoUploader:
             if v.get("sku") and not ok_sku:
                 issues.append(f"Chưa đặt được SKU cho '{v['value']}'")
             # 4c) ảnh: bấm ô ảnh trên dòng → chọn ảnh thứ i trong hộp thoại
-            if i < n_images:
+            k = img_idx[i] if i < len(img_idx) else None     # vị trí ảnh của phiên bản (nhiều phiên bản có thể chung 1 ảnh)
+            if k is not None:
                 try:
                     pic = row.locator("img, [class*=image], [class*=thumb], [class*=photo]").first
                     pic.click(timeout=3000)
@@ -710,9 +711,9 @@ class SapoUploader:
                     if not modal:
                         raise SapoError("không mở hộp chọn ảnh")
                     thumbs = modal.locator("img")
-                    if thumbs.count() <= i:
+                    if thumbs.count() <= k:
                         raise SapoError(f"hộp thoại chỉ có {thumbs.count()} ảnh")
-                    thumbs.nth(i).click()
+                    thumbs.nth(k).click()
                     self.page.wait_for_timeout(300)
                     self._click_text(modal, ["Lưu", "Chọn", "Xong", "Đồng ý", "Áp dụng", "Cập nhật"])
                     self.page.wait_for_timeout(600)
@@ -721,7 +722,7 @@ class SapoUploader:
                     issues.append(f"Chưa gán ảnh cho '{v['value']}' ({str(e).splitlines()[0][:80]})")
                     self.page.keyboard.press("Escape")
             p = f"{v['price']:,}".replace(",", ".") if v.get("price") else "-"
-            self.log(f"    · Phiên bản {v['value']}: giá {p} | SKU {v.get('sku') or '-'} | ảnh {i + 1 if i < n_images else '-'}")
+            self.log(f"    · Phiên bản {v['value']}: giá {p} | SKU {v.get('sku') or '-'} | ảnh {k + 1 if k is not None else '-'}")
         return issues
 
     def dump_html(self, path):

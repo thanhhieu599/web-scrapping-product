@@ -4,12 +4,13 @@ Dùng inline style để hiển thị đẹp ở mọi theme Sapo (không phụ 
 """
 from html import escape
 
-RED = "#c8102e"
-TH = f"background:{RED};color:#fff;padding:8px 10px;border:1px solid #e5e5e5;text-align:center;"
-TD_LABEL = "padding:8px 10px;border:1px solid #e5e5e5;font-weight:600;"
-TD = "padding:8px 10px;border:1px solid #e5e5e5;text-align:center;"
-SECTION = "padding:8px 10px;border:1px solid #e5e5e5;background:#f2f2f2;font-weight:700;text-transform:uppercase;"
-H2 = f"font-size:20px;color:{RED};border-bottom:2px solid {RED};padding-bottom:6px;margin:24px 0 12px;"
+# Chữ màu đen, không gạch chân tiêu đề; bảng kẻ khung xám, dòng tiêu đề nền xám nhạt
+BLACK = "#000"
+TH = f"background:#f2f2f2;color:{BLACK};font-weight:700;padding:8px 10px;border:1px solid #d9d9d9;text-align:center;"
+TD_LABEL = f"color:{BLACK};padding:8px 10px;border:1px solid #d9d9d9;font-weight:600;"
+TD = f"color:{BLACK};padding:8px 10px;border:1px solid #d9d9d9;text-align:center;"
+SECTION = f"color:{BLACK};padding:8px 10px;border:1px solid #d9d9d9;background:#fafafa;font-weight:700;text-transform:uppercase;"
+H2 = f"font-size:20px;font-weight:700;color:{BLACK};margin:24px 0 12px;"
 
 
 IMG = "max-width:100%;height:auto;max-height:220px;"
@@ -25,7 +26,7 @@ def _features_html(features, images=None, name=""):
     out = [f'<h2 style="{H2}">Đặc điểm nổi bật</h2>']
     if features:
         items = "".join(f'<li style="margin:4px 0;">{escape(f)}</li>' for f in features)
-        out.append(f'<ul style="padding-left:20px;line-height:1.7;">{items}</ul>')
+        out.append(f'<ul style="padding-left:20px;line-height:1.7;color:#000;">{items}</ul>')
     if images:
         out.append('<p style="text-align:center;">' + " ".join(_img(u, name) for u in images) + "</p>")
     return "".join(out)
