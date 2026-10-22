@@ -253,23 +253,27 @@ STATUS_JS = r"""
 
 IMG_COUNT_JS = r"""
 () => {
-  // Đếm ảnh sản phẩm ĐÃ HIỆN trong khung "Ảnh sản phẩm" (bỏ hình minh hoạ "Thả file ảnh vào đây...")
+  // Đếm ảnh ĐÃ HIỆN trong khung "Ảnh sản phẩm". Khung = phần tử lớn nhất chứa tiêu đề "Ảnh sản phẩm"
+  // nhưng KHÔNG chứa khung khác (Giá, Kho hàng, Nội dung...) – lấy cả phần thân chứa ảnh, không chỉ dòng tiêu đề.
   const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
   const vis = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
   const head = [...document.querySelectorAll('h1,h2,h3,h4,h5,label,span,div,strong,p')]
     .find(e => vis(e) && e.children.length === 0 && norm(e.textContent) === 'ảnh sản phẩm');
-  if (!head) return -1;
+  if (!head) return { n: -1, empty: false };
+  const OTHERS = ['giá sản phẩm', 'kho hàng', 'vận chuyển', 'tên sản phẩm', 'thuộc tính', 'phân loại', 'trạng thái'];
   let card = head;
-  for (let k = 0; k < 8 && card.parentElement; k++) {
+  while (card.parentElement && card.parentElement !== document.body) {
+    const t = norm(card.parentElement.textContent);
+    if (OTHERS.some(o => t.includes(o))) break;
     card = card.parentElement;
-    if (card.querySelector('input[type=file], img, [style*="background-image"]')) break;
   }
-  const isEmptyState = e => !!e.closest('[class*=empty], [class*=dropzone-placeholder], [class*=no-image]')
-                            || /thả file|kéo thả|drop/i.test((e.closest('div') || {}).textContent || '') && !e.closest('[class*=thumb], [class*=image-item], li');
-  const imgs = [...card.querySelectorAll('img')].filter(i => vis(i) && !isEmptyState(i)
+  const EMPTY_TXT = /thả file|kéo thả|kéo ảnh|drop file|drag/i;
+  const emptyBox = [...card.querySelectorAll('div, p, span, label')].find(e => vis(e) && e.children.length <= 3 && EMPTY_TXT.test(e.textContent || ''));
+  const inEmpty = e => emptyBox && (emptyBox.contains(e) || (emptyBox.parentElement && emptyBox.parentElement.contains(e) && !e.closest('li, [class*=item], [class*=thumb]')));
+  const imgs = [...card.querySelectorAll('img')].filter(i => vis(i) && !inEmpty(i) && !head.parentElement.contains(i)
                  && !/placeholder|empty|illustration|no-image/i.test((i.className || '') + ' ' + (i.getAttribute('src') || '')));
-  const bgs = [...card.querySelectorAll('[style*="background-image"]')].filter(e => vis(e) && !isEmptyState(e));
-  return imgs.length + bgs.length;
+  const bgs = [...card.querySelectorAll('[style*="background-image"]')].filter(e => vis(e) && !inEmpty(e));
+  return { n: imgs.length + bgs.length, empty: !!emptyBox };
 }
 """
 
@@ -396,44 +400,48 @@ class SapoUploader:
                 link.click()
             fc.value.set_files(files)
 
+    def _count_images(self):
+        try:
+            r = self.page.evaluate(IMG_COUNT_JS)
+            return r.get("n", -1), r.get("empty", False)
+        except Exception:
+            return -1, False
+
     def _wait_images(self, want, timeout_s):
-        """Chờ tới khi khung 'Ảnh sản phẩm' hiện đủ `want` ảnh. Trả số ảnh thấy được (-1 = không đếm được)."""
-        end = time.time() + timeout_s
-        n = self.page.evaluate(IMG_COUNT_JS)
-        while n != -1 and n < want and time.time() < end:
+        """Chờ khung 'Ảnh sản phẩm' hiện đủ `want` ảnh. Trả (số ảnh, còn ô 'Thả file ảnh' trống không).
+        Nếu sau 12 giây vẫn 0 ảnh mà KHÔNG còn ô trống → không đếm được (giao diện khác) → thôi chờ."""
+        start = time.time()
+        n, empty = self._count_images()
+        while n != -1 and n < want and time.time() - start < timeout_s:
+            if n == 0 and not empty and time.time() - start > 12:
+                return -1, False
             self.page.wait_for_timeout(1000)
-            n = self.page.evaluate(IMG_COUNT_JS)
-        return n
+            n, empty = self._count_images()
+        return n, empty
 
     def _upload_images(self, files):
-        """Tải ảnh lên Sapo và CHỜ Sapo nhận đủ ảnh trước khi đi tiếp. Trả danh sách vấn đề (rỗng = ổn)."""
+        """Tải ảnh lên Sapo, chờ Sapo nhận đủ ảnh (để không bấm Lưu khi ảnh chưa lên).
+        KHÔNG bao giờ dừng chờ người dùng; trả mô tả vấn đề (rỗng = ổn) để liệt kê cuối lần chạy."""
         if not files:
             self.log("    ! Không có ảnh để tải lên (xem các dòng 'Không tải được ảnh' ở trên)")
-            return ["Không có ảnh nào để tải lên"]
+            return "không có ảnh"
         want = len(files)
         timeout_s = max(45, 8 * want)                 # ảnh lớn / mạng chậm: tối đa 8 giây mỗi ảnh
         self._send_files(files)
-        n = self._wait_images(want, timeout_s)
-        if n == -1:                                   # không đếm được (giao diện Sapo khác) → chờ như cũ
-            self.page.wait_for_timeout(min(3000 + 2000 * want, 40000))
-            try:
-                self.page.wait_for_load_state("networkidle", timeout=20000)
-            except Exception:
-                pass
-            self.log(f"    · Ảnh: đã gửi {want} ảnh (không đếm được ảnh trên Sapo – hãy kiểm tra lại)")
-            return []
-        if n == 0:                                    # Sapo chưa nhận ảnh nào → gửi lại 1 lần
+        n, empty = self._wait_images(want, timeout_s)
+        if n == 0 and empty:                          # chắc chắn chưa có ảnh (ô 'Thả file ảnh' vẫn trống) → gửi lại 1 lần
             self.log("    ! Sapo chưa nhận ảnh – tải lên lại...")
             self._send_files(files)
-            n = self._wait_images(want, timeout_s)
+            n, empty = self._wait_images(want, timeout_s)
+        if n == -1:                                   # không đếm được → chờ thêm chút cho chắc rồi đi tiếp
+            self.page.wait_for_timeout(min(1500 * want, 15000))
+            self.log(f"    · Ảnh: đã gửi {want} ảnh")
+            return ""
         if n >= want:
             self.log(f"    · Ảnh: Sapo đã nhận đủ {n}/{want} ảnh")
-            return []
-        if n == 0:
-            self.log(f"    ! Ảnh: Sapo KHÔNG nhận ảnh nào (0/{want})")
-            return [f"Sapo không nhận ảnh (0/{want})"]
-        self.log(f"    ! Ảnh: Sapo mới nhận {n}/{want} ảnh sau {timeout_s} giây – vẫn tiếp tục, kiểm tra lại sau")
-        return []
+            return ""
+        self.log(f"    ! Ảnh: Sapo mới hiện {n}/{want} ảnh – vẫn lưu, hãy kiểm tra lại sản phẩm này")
+        return f"Sapo mới hiện {n}/{want} ảnh"
 
     def _ensure_checkbox(self, text, want=True):
         mark = "cb-" + re.sub(r"\W+", "", text.lower())[:20]
@@ -532,7 +540,10 @@ class SapoUploader:
         self.log(f"    · Tên: {p['name']}")
 
         self._set_content(p["content_html"])
-        img_issues = self._upload_images(p.get("image_files") or [])
+        self.last_warnings = []
+        img_issue = self._upload_images(p.get("image_files") or [])
+        if img_issue:
+            self.last_warnings.append(img_issue)
 
         if p.get("price"):
             price = self._by_label(["Giá"], "price")
@@ -558,7 +569,7 @@ class SapoUploader:
                 self._type(w, p["weight_g"])
                 self.log(f"    · Khối lượng: {p['weight_g']} g")
 
-        issues = list(img_issues) if p.get("image_files") else []
+        issues = []
         if opts.get("variant_attr") and len(p.get("variants") or []) >= 2:
             issues += self._add_variants(opts["variant_attr"], p["variants"], int(p.get("variant_images") or 0))
             for msg in issues:
@@ -569,18 +580,15 @@ class SapoUploader:
         self._pick_collections(opts.get("collections") or [])
         self._add_tags(opts.get("tags") or [])
 
-        if issues and opts.get("auto_save", True):
-            # không lưu khi phiên bản chưa đầy đủ → để người dùng hoàn tất, tránh đăng sai giá/ảnh
+        if issues:
+            # KHÔNG dừng chờ: vẫn tự Lưu, ghi lại form để chẩn đoán và liệt kê cuối lần chạy
+            self.last_warnings += issues
             if self.cfg.get("output_dir"):
                 logs = Path(self.cfg["output_dir"]) / "logs"
                 logs.mkdir(parents=True, exist_ok=True)
                 stamp = time.strftime("%Y%m%d-%H%M%S")
                 self.dump_html(logs / f"sapo-form-{stamp}.html")
-                self.screenshot(logs / f"sapo-form-{stamp}.png")
-                self.log(f"    ! Đã lưu form Sapo vào output/logs/sapo-form-{stamp}.html (gửi file này để chỉnh công cụ)")
-            self.wait_user("Sản phẩm chưa đầy đủ (" + "; ".join(issues)[:200] + "). Hãy hoàn tất trên trình duyệt "
-                           "(thêm ảnh / phiên bản) rồi bấm Lưu, sau đó bấm Tiếp tục.")
-            return self._saved_url()
+                self.log(f"    ! Phiên bản chưa đầy đủ – vẫn lưu; form Sapo lưu ở output/logs/sapo-form-{stamp}.html")
         if opts.get("auto_save", True):
             url = self._save()
             self.log(f"    ✓ Đã lưu: {url}")

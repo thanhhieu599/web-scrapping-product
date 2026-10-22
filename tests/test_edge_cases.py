@@ -176,13 +176,14 @@ check(any("tải lên lại" in l for l in logs), "Phát hiện Sapo chưa nhậ
 check(res and res[0]["status"] == "created" and saved and len(saved[0].get("files", [])) == 3,
       f"Sau khi tải lại: đủ 3 ảnh trên Sapo ({saved and saved[0].get('files')})")
 
-print("=== 11. Sapo không nhận ảnh nào → KHÔNG tự lưu sản phẩm thiếu ảnh ===")
+print("=== 11. Sapo không hiện ảnh → KHÔNG dừng chờ, vẫn tự Lưu và báo cuối lần chạy ===")
 asked = []
 logs.clear(); saved.clear()
 res = pipeline.run([f"{base}/san-pham/hop-dung-dung-cu-8450.html"], OPTS, dict(cfg, sapo_admin_url=f"{base}/admin5"), log,
                    wait_user=lambda msg: asked.append(msg))
-check(asked and "ảnh" in asked[0], "Dừng lại báo người dùng thêm ảnh")
-check(not saved and res and res[0]["status"] == "not_saved", f"Không tự lưu sản phẩm thiếu ảnh ({res and res[0]['status']})")
+check(not asked, "Không dừng chờ người dùng")
+check(saved and res and res[0]["status"] == "created", f"Tự bấm Lưu và chạy tiếp ({res and res[0]['status']})")
+check(any("cần kiểm tra lại" in l for l in logs), "Cuối lần chạy liệt kê sản phẩm cần kiểm tra ảnh")
 
 srv.shutdown()
 shutil.rmtree(tmp, ignore_errors=True)

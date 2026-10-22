@@ -117,6 +117,7 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                         rec["status"] = "scraped"
                     else:
                         sapo_url = uploader.create_product(payload, opts)
+                        rec["warnings"] = list(getattr(uploader, "last_warnings", []) or [])
                         if not sapo_url:
                             log("  – Sản phẩm CHƯA được lưu trên Sapo (không ghi vào lịch sử, lần sau sẽ đăng lại)")
                             rec["status"] = "not_saved"
@@ -145,6 +146,11 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
 
     ok = sum(r["status"] in ("created", "scraped") for r in results)
     err = sum(r["status"] == "error" for r in results)
+    warn = [r for r in results if r["status"] == "created" and r.get("warnings")]
+    if warn:
+        log(f"\n⚠ {len(warn)} sản phẩm ĐÃ LƯU nhưng cần kiểm tra lại trên Sapo:")
+        for r in warn:
+            log(f"   - {r.get('sku') or ''} {r.get('name') or ''}: {'; '.join(r['warnings'])[:200]}")
     no_img = [r for r in results if r["status"] in ("created", "scraped") and r.get("images") == 0]
     if no_img:
         log(f"\n⚠ {len(no_img)} sản phẩm KHÔNG có ảnh – cần thêm ảnh bằng tay trên Sapo:")
