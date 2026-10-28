@@ -49,7 +49,8 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
             for u in urls:
                 if stopped():
                     break
-                log(f"🔎 Đọc nguồn: {u}")
+                prof = scraper.use_site(u)
+                log(f"🔎 Đọc nguồn: {u}  [{prof.get('name')}]")
                 try:
                     links, data = scraper.expand(u)
                 except Exception as e:
@@ -71,7 +72,12 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                 log(f"\n[{idx}/{len(product_urls)}] {url}")
                 rec = {"url": url, "status": "error"}
                 try:
+                    prof = scraper.use_site(url)
                     data = cache.get(url) or scraper.scrape_url(url)
+                    # ô để trống → dùng giá trị mặc định của nhà cung cấp trong sites.json
+                    popts = dict(opts, vendor=opts.get("vendor") or prof.get("vendor") or "",
+                                 product_type=opts.get("product_type") or prof.get("product_type") or "")
+                    icfg = scraper.cfg
                     if not Scraper.is_product(data):
                         log("  – Bỏ qua: không phải trang sản phẩm")
                         rec["status"] = "skipped"
@@ -82,7 +88,7 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                     log(f"  • Đặc điểm: {len(data['features'])} dòng | Thông số: {len(data['spec']['rows'])} dòng"
                         f" ({data['found'].get('spec_source') or '-'})"
                         f" | Ảnh quy cách: {len(data['variant_images'])} | Ảnh gallery: {len(data['gallery_images'])}")
-                    if sku and sku in history and cfg.get("skip_existing_sku", True) and not opts.get("force"):
+                    if sku and sku in history and icfg.get("skip_existing_sku", True) and not opts.get("force"):
                         log(f"  – Bỏ qua: mã {sku} đã đăng trước đó ({history[sku].get('sapo_url')})")
                         rec.update(status="exists", sku=sku)
                         results.append(rec)
@@ -98,20 +104,27 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                             f"{v['value']} ({format_vnd(v['price'])})" for v in variants) if variants else ""))
 
                     folder = product_folder(out_dir, data)
-                    strip = [x.lower() for x in cfg.get("image_url_strip_params", [])]
-                    variant_mode = bool(variants) and cfg.get("image_mode", "quycach") == "quycach"
+                    strip = [x.lower() for x in icfg.get("image_url_strip_params", [])]
+                    adapter = scraper.adapter
+                    if not adapter or adapter.platform != data.get("platform"):     # dữ liệu lấy từ bộ nhớ tạm
+                        from .sites import ADAPTERS
+                        from .sites.base import SiteAdapter
+                        adapter = ADAPTERS.get(data.get("platform"), SiteAdapter)(prof)
+                    variant_mode = bool(variants) and icfg.get("image_mode", "quycach") == "quycach"
                     if variant_mode:
                         imgs = [v.get("image") for v in variants]          # đúng thứ tự phiên bản (có thể trùng hình)
+                        extra = adapter.extra_images(data) if adapter else []
+                        imgs += [u for u in extra if u and u not in imgs]
                     else:
-                        imgs = pick_images(data, cfg.get("image_mode", "quycach"))
+                        imgs = pick_images(data, icfg.get("image_mode", "quycach"))
                     # ảnh cùng tên cỡ lớn trong dữ liệu trang (gallery, phiên bản) dùng thay ảnh nhỏ / ảnh gốc bị chặn
                     alternates = list(data.get("gallery_images") or []) + [v.get("image") for v in variants] \
                         + list(data.get("variant_images") or [])
-                    max_img = int(cfg.get("max_images", 15))
+                    max_img = int(icfg.get("max_images", 15))
                     files = scraper.download_images(imgs, folder / "images", max_img, alternates,
                                                     keep_small="always" if variant_mode else "if_none")
                     # ảnh của từng phiên bản = vị trí trong danh sách ảnh đã tải (hình trùng dùng chung 1 ảnh)
-                    variant_idx = list(scraper.last_index) if variant_mode else [None] * len(variants)
+                    variant_idx = list(scraper.last_index[:len(variants)]) if variant_mode else [None] * len(variants)
                     if not files:                       # bộ ảnh đã chọn hỏng hết → thử bộ ảnh còn lại
                         others = [u for u in (data.get("gallery_images") or []) + (data.get("variant_images") or [])
                                   if u and u not in imgs]
@@ -124,9 +137,10 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                     # ảnh trong mô tả: dùng link ảnh gốc của nhà cung cấp
                     data["spec"]["images"] = [upgrade_image_url(u, strip) if u else "" for u in data["spec"].get("images", [])]
                     data["feature_images"] = [upgrade_image_url(u, strip) for u in data.get("feature_images", [])]
-                    html = build_content_html(data)
+                    mode = adapter.content_mode(data) if adapter else "features_specs"
+                    html = build_content_html(data, mode)
                     weight = weight_grams(data) if cfg.get("fill_weight", True) else None
-                    title = name_with_vendor(data["name"], opts.get("vendor")) if opts.get("vendor_in_name", True) else data["name"]
+                    title = name_with_vendor(data["name"], popts.get("vendor")) if opts.get("vendor_in_name", True) else data["name"]
                     payload = {"debug_dir": str(folder), "name": title, "sku": sku, "price": data.get("price"),
                                "content_html": html, "image_files": files, "weight_g": weight,
                                "variants": variants, "variant_image_idx": variant_idx}
@@ -135,7 +149,7 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                     if scraper.page.url.split("#")[0] == url.split("#")[0]:
                         scraper.save_source_html(folder / "trang_goc.html")
                     (folder / "noi_dung.html").write_text(html, encoding="utf-8")
-                    rec.update(sku=sku, name=data["name"], folder=str(folder), images=len(files))
+                    rec.update(sku=sku, name=data["name"], folder=str(folder), images=len(files), site=prof.get("name"))
                     if not files:
                         log("  ⚠ KHÔNG lấy được ảnh nào cho sản phẩm này (xem các dòng 'Không tải được ảnh' ở trên)")
 
@@ -144,7 +158,7 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                         rec["status"] = "scraped"
                     else:
                         try:
-                            sapo_url = uploader.create_product(payload, opts)
+                            sapo_url = uploader.create_product(payload, popts)
                         except Exception as e:
                             if not _browser_closed(e):
                                 raise
@@ -156,7 +170,7 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                                 pass
                             uploader = SapoUploader(pw, cfg, log, wait_user)
                             uploader.ensure_login()
-                            sapo_url = uploader.create_product(payload, opts)
+                            sapo_url = uploader.create_product(payload, popts)
                         rec["warnings"] = list(getattr(uploader, "last_warnings", []) or [])
                         if not sapo_url:
                             log("  – Sản phẩm CHƯA được lưu trên Sapo (không ghi vào lịch sử, lần sau sẽ đăng lại)")

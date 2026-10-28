@@ -548,8 +548,13 @@ def upgrade_image_url(url, strip_params):
 
 class Scraper:
     def __init__(self, browser, cfg, log=print):
+        from .sites import load_sites
+        self.base_cfg = cfg
         self.cfg = cfg
         self.log = log
+        self.sites = load_sites(cfg.get("sites_file"))
+        self.profile = {"name": "web", "platform": "auto", "content": "auto"}
+        self.adapter = None
         # Dùng đúng User-Agent của trình duyệt, chỉ bỏ chữ "Headless" (một số web chặn bot theo chữ này)
         probe = browser.new_page()
         ua = probe.evaluate("navigator.userAgent").replace("HeadlessChrome", "Chrome")
@@ -583,9 +588,24 @@ class Scraper:
                 pass
         self.page.wait_for_timeout(500)
 
+    def use_site(self, url):
+        """Chọn hồ sơ nhà cung cấp (sites.json) theo tên miền của link → cấu hình + bộ đọc tương ứng."""
+        from .sites import merged_cfg, profile_for
+        prof = profile_for(url, self.sites)
+        if prof.get("_domain") != self.profile.get("_domain"):
+            self.profile = prof
+            self.cfg = merged_cfg(self.base_cfg, prof)
+            self.adapter = None
+        return self.profile
+
     def scrape_current(self):
+        from .sites import adapter_for
         data = self.page.evaluate(SCRAPE_JS, {"selectors": self.cfg.get("source_selectors", {})})
         data["price"] = parse_vnd(data.get("price_text"))
+        self.adapter = adapter_for(self.page, self.profile)          # bộ đọc theo nền tảng của web
+        data = self.adapter.enrich(self.page, data)
+        data["platform"] = self.adapter.platform
+        data["url"] = self.page.url
         return data
 
     @staticmethod
@@ -604,12 +624,28 @@ class Scraper:
             return False
         return bool(f.get("price") and data.get("sku"))
 
+    def _check_variants(self, variants, base):
+        """Chuẩn hoá danh sách phiên bản: giá là số nguyên; mỗi phiên bản phải có mã riêng, không trùng."""
+        if len(variants or []) < 2:
+            return []
+        for v in variants:
+            v["value"] = (v.get("value") or v.get("sku") or v.get("label") or "").strip()
+            v["price"] = parse_vnd(v["price"]) if v.get("price") not in (None, "") else base.get("price")
+        vals = [v["value"] for v in variants]
+        if not all(vals) or len(set(vals)) != len(vals):
+            self.log(f"    ! Không xác định được mã riêng cho từng phiên bản ({vals}) → bỏ qua phần phiên bản")
+            return []
+        return variants
+
     def scrape_variants(self, base_url, base):
         """Đọc từng phiên bản dưới QUY CÁCH: nhãn, mã SP, giá, ảnh. Trả [] nếu không có."""
         sel = {"selectors": self.cfg.get("source_selectors", {})}
+        direct = self.adapter.variants(self, base_url, base) if self.adapter else None
+        if direct is not None:                       # nền tảng có sẵn dữ liệu phiên bản (vd WooCommerce)
+            return self._check_variants(direct, base)
         sw = self.page.evaluate(SWATCH_JS, sel)
-        if len(sw) < 2:
-            return []
+        if len(sw) < 2:                              # không có ô Quy cách để bấm → bộ đọc nền tảng thử cách khác
+            return self._check_variants(self.adapter.variants_fallback(self, base) if self.adapter else [], base)
         mg = None
         try:
             mg = self.page.evaluate(MAGENTO_JS)
@@ -672,6 +708,7 @@ class Scraper:
         return variants
 
     def scrape_url(self, url):
+        self.use_site(url)
         self._open(url)
         return self.scrape_current()
 

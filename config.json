@@ -1,4 +1,5 @@
 {
+  "sites_file": "sites.json",
   "sapo_admin_url": "https://trangthietbivn.mysapo.net/admin",
   "browser_channel": "auto",
   "browser_executable": "",
@@ -12,7 +13,20 @@
   "listing_max_pages": 10,
   "product_link_pattern": "",
   "delay_seconds": 2,
-  "image_url_strip_params": ["w", "h", "width", "height", "size", "resize", "mode", "rmode", "quality", "q", "fit", "crop"],
+  "image_url_strip_params": [
+    "w",
+    "h",
+    "width",
+    "height",
+    "size",
+    "resize",
+    "mode",
+    "rmode",
+    "quality",
+    "q",
+    "fit",
+    "crop"
+  ],
   "source_selectors": {
     "name": "",
     "sku": "",

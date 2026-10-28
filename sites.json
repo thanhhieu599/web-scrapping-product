@@ -1,0 +1,17 @@
+{
+  "_huong_dan": "Danh bạ nhà cung cấp. Thêm web mới = thêm 1 mục theo tên miền. Xem README mục 'Thêm nhà cung cấp mới'. Web chưa có ở đây vẫn chạy (tự nhận nền tảng).",
+  "milwaukeetool.com.vn": {
+    "name": "Milwaukee",
+    "platform": "magento",
+    "vendor": "Milwaukee",
+    "content": "features_specs"
+  },
+  "delivietnam.com.vn": {
+    "name": "Deli Việt Nam",
+    "platform": "woocommerce",
+    "vendor": "Deli",
+    "product_type": "Văn phòng phẩm",
+    "content": "description",
+    "listing_max_pages": 60
+  }
+}

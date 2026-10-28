@@ -165,6 +165,48 @@ output/
 
 ---
 
+## 5b. Thêm nhà cung cấp mới (`sites.json`)
+
+Ứng dụng được thiết kế để **thêm nguồn sản phẩm mới mà không cần sửa code**:
+
+| Lớp | Vai trò | File |
+|---|---|---|
+| Danh bạ nhà cung cấp | Tên miền → nền tảng, NCC/Loại mặc định, cách dựng nội dung, ghi đè cấu hình | `sites.json` (cạnh file chạy) |
+| Bộ đọc theo nền tảng | Đọc đúng tên, mã, giá, ảnh gốc, mô tả, phiên bản của từng nền tảng web | `dt_importer/sites/` (`magento.py`, `woocommerce.py`, `base.py`) |
+| Bộ đọc chung | Web chưa biết nền tảng: dò theo chữ "Quy cách", "Đặc điểm", "Thông số" | `dt_importer/scraper.py` |
+
+Đang có sẵn:
+
+```json
+{
+  "milwaukeetool.com.vn": {"name": "Milwaukee", "platform": "magento", "vendor": "Milwaukee", "content": "features_specs"},
+  "delivietnam.com.vn":   {"name": "Deli Việt Nam", "platform": "woocommerce", "vendor": "Deli",
+                           "product_type": "Văn phòng phẩm", "content": "description", "listing_max_pages": 60}
+}
+```
+
+**Thêm 1 nhà cung cấp** = thêm 1 dòng theo tên miền (không cần `www.`). Các khoá đều tuỳ chọn:
+
+| Khoá | Ý nghĩa |
+|---|---|
+| `name` | Tên hiện trong nhật ký |
+| `platform` | `auto` (tự nhận) · `magento` · `woocommerce` · `generic` |
+| `vendor`, `product_type` | Nhà cung cấp / Loại mặc định – dùng khi ô trên giao diện để trống |
+| `content` | `features_specs` = Đặc điểm + bảng Thông số · `description` = mô tả gốc của web (đã làm sạch: bỏ mã độc, màu chữ, iframe; chữ đen) + bảng thuộc tính · `auto` |
+| `image_mode`, `max_images`, `listing_max_pages`, `product_link_pattern`, `image_url_strip_params` | Ghi đè `config.json` riêng cho web này |
+| `selectors` | CSS selector riêng khi web đặc biệt: `name`, `sku`, `price`, `gallery`, `description`, `variant_images`, `features`, `specs` |
+
+Web **chưa có** trong `sites.json` vẫn chạy: ứng dụng tự nhận Magento / WooCommerce, còn lại dùng bộ đọc chung.
+
+**Ví dụ – tải cả nhóm Văn phòng phẩm của Deli:** dán `https://delivietnam.com.vn/danh-muc-san-pham/van-phong-pham`
+vào ô link, để trống Nhà cung cấp/Loại (tự lấy "Deli" / "Văn phòng phẩm"), nhập "Tên thuộc tính" = `Màu sắc` nếu muốn
+tạo phiên bản, bấm Chạy. Ứng dụng tự đi hết các trang (1, 2, 3… theo nút "→"), mỗi sản phẩm lấy: tên, mã, giá
+(ưu tiên giá khuyến mãi), ảnh gốc cỡ lớn, mô tả, bảng "Thông tin bổ sung", phiên bản (giá/mã/ảnh từng màu).
+
+**Web dùng nền tảng khác** (Haravan, Shopify, Sapo, tự viết…): tạo `dt_importer/sites/<ten>.py` kế thừa `SiteAdapter`,
+ghi đè `detect()` / `enrich()` / `variants()`, rồi thêm vào `ADAPTERS` trong `dt_importer/sites/__init__.py`.
+Kiểm thử mẫu: `tests/test_sites.py` + trang giả lập `tests/mock_site/woo/`.
+
 ## 6. Cách hoạt động (để dễ bảo trì)
 
 - **Không phụ thuộc mã CSS của trang nguồn**: ứng dụng tìm dữ liệu theo **chữ hiển thị** –
@@ -205,6 +247,7 @@ Kiểm thử sau khi sửa mã (không cần Internet, chạy trên trang mô ph
 ```bash
 python tests/test_units.py        # từng hàm: đọc giá, chèn nhà cung cấp, khối lượng, chống mã độc...
 python tests/run_mock_test.py     # toàn bộ quy trình: cào → đăng Sapo (phiên bản, ảnh, trạng thái...)
+python tests/test_sites.py        # nhà cung cấp: Magento dạng danh sách chọn, WooCommerce kiểu Deli (danh mục nhiều trang)
 python tests/test_edge_cases.py   # tình huống xấu: mất mạng, chưa đăng nhập, ảnh lỗi, "Liên hệ", bấm Dừng...
 python tests/test_gui.py          # giao diện: tự điền ô, bấm Chạy, kiểm tra kết quả
 ```

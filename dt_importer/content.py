@@ -76,7 +76,113 @@ def _spec_html(spec, sku=""):
     return "".join(out)
 
 
-def build_content_html(data):
+
+
+# ---------- Chế độ "description": dùng mô tả gốc của nhà cung cấp (đã làm sạch) ----------
+from html.parser import HTMLParser  # noqa: E402
+from urllib.parse import urljoin  # noqa: E402
+
+ALLOWED = {"p", "br", "ul", "ol", "li", "strong", "b", "em", "i", "u", "h2", "h3", "h4", "table", "thead",
+           "tbody", "tr", "th", "td", "img", "span", "div", "blockquote", "sub", "sup", "hr", "figure", "figcaption"}
+DROP_WITH_CONTENT = {"script", "style", "noscript", "iframe", "form", "button", "svg", "template", "object", "embed"}
+VOID = {"br", "img", "hr"}
+TAG_STYLE = {"h2": H2, "h3": f"font-size:17px;font-weight:700;color:{BLACK};margin:18px 0 8px;",
+             "h4": f"font-size:15px;font-weight:700;color:{BLACK};margin:14px 0 6px;",
+             "table": "width:100%;border-collapse:collapse;font-size:14px;",
+             "th": TH, "td": f"color:{BLACK};padding:8px 10px;border:1px solid #d9d9d9;",
+             "img": "max-width:100%;height:auto;", "p": f"color:{BLACK};", "li": f"color:{BLACK};"}
+
+
+class _Clean(HTMLParser):
+    def __init__(self, base):
+        super().__init__(convert_charrefs=True)
+        self.base, self.out, self.skip, self.open = base, [], 0, []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in DROP_WITH_CONTENT:
+            self.skip += tag not in VOID
+            return
+        if self.skip:
+            return
+        if tag == "h1":
+            tag = "h2"
+        if tag not in ALLOWED:
+            return
+        a = dict(attrs)
+        keep = []
+        if tag == "img":
+            src = a.get("data-src") or a.get("data-lazy-src") or a.get("src") or ""
+            if not src or src.startswith("data:"):
+                return
+            src = urljoin(self.base, src)
+            if not src.startswith(("http://", "https://")):
+                return
+            keep.append(("src", src))
+            if a.get("alt"):
+                keep.append(("alt", a["alt"]))
+        if tag in ("td", "th"):
+            for k in ("colspan", "rowspan"):
+                if (a.get(k) or "").isdigit():
+                    keep.append((k, a[k]))
+        if tag in TAG_STYLE:
+            keep.append(("style", TAG_STYLE[tag]))
+        attr = "".join(f' {k}="{escape(v, quote=True)}"' for k, v in keep)
+        self.out.append(f"<{tag}{attr}>")
+        if tag not in VOID:
+            self.open.append(tag)
+
+    def handle_endtag(self, tag):
+        if tag in DROP_WITH_CONTENT:
+            self.skip = max(0, self.skip - 1)
+            return
+        if self.skip:
+            return
+        tag = "h2" if tag == "h1" else tag
+        if tag in ALLOWED and tag not in VOID and tag in self.open:
+            while self.open:                               # đóng các thẻ còn mở bên trong
+                t = self.open.pop()
+                self.out.append(f"</{t}>")
+                if t == tag:
+                    break
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.out.append(escape(data, quote=False))
+
+    def result(self):
+        while self.open:
+            self.out.append(f"</{self.open.pop()}>")
+        return "".join(self.out)
+
+
+def clean_description(html, base_url=""):
+    """Mô tả gốc → HTML an toàn: chỉ giữ thẻ định dạng cơ bản, bỏ script/style/sự kiện, ảnh link tuyệt đối, chữ đen."""
+    if not html:
+        return ""
+    p = _Clean(base_url)
+    p.feed(html)
+    p.close()
+    out = p.result().strip()
+    import re
+    out = re.sub(r"<(p|div|span|li|h[234])[^>]*>\s*</\1>", "", out)        # bỏ khối rỗng
+    return out
+
+
+def _description_html(data):
+    desc = clean_description(data.get("description_html"), data.get("url") or "")
+    if not desc:
+        return ""
+    return f'<div style="color:{BLACK};line-height:1.7;">{desc}</div>'
+
+
+def build_content_html(data, mode="features_specs"):
+    """mode: "features_specs" = Đặc điểm + Thông số (mặc định);
+             "description"   = mô tả gốc của web (làm sạch) + bảng thông số/thuộc tính."""
+    if mode == "description" and data.get("description_html"):
+        parts = [_description_html(data), _spec_html(data.get("spec"), data.get("sku"))]
+        html = "".join(p for p in parts if p)
+        if html:
+            return html
     parts = [_features_html(data.get("features"), data.get("feature_images"), data.get("name", "")),
              _spec_html(data.get("spec"), data.get("sku"))]
     return "".join(p for p in parts if p)
