@@ -97,6 +97,16 @@ class _Clean(HTMLParser):
     def __init__(self, base, images=True):
         super().__init__(convert_charrefs=True)
         self.base, self.out, self.skip, self.open, self.images = base, [], 0, [], images
+        # Danh sách ĐÁNH SỐ (<ol>): ghi số thành chữ thật ("2. ...") để Sapo không tự đánh lại.
+        # Web WordPress hay tách mỗi tiêu đề thành 1 <ol start="2">, <ol start="3"> riêng – bỏ "start" là sai số.
+        self.lists = []          # [["ol", số hiện tại] | ["ul", 0]]
+        self.items = []          # loại từng <li> đang mở: "ol" / "ul"
+        self.num = ""            # số chờ ghi ("2. ") – ghi vào trong <strong> nếu tiêu đề in đậm
+
+    def _flush_num(self):
+        if self.num:
+            self.out.append(self.num)
+            self.num = ""
 
     def handle_starttag(self, tag, attrs):
         if tag in DROP_WITH_CONTENT:
@@ -109,6 +119,26 @@ class _Clean(HTMLParser):
         if tag not in ALLOWED:
             return
         a = dict(attrs)
+        if tag not in ("strong", "b"):
+            self._flush_num()
+        if tag == "ol":
+            start = (a.get("start") or "").strip()
+            self.lists.append(["ol", (int(start) if start.lstrip("-").isdigit() else 1) - 1])
+            return                                       # không xuất <ol>: số được ghi thành chữ ở từng mục
+        if tag == "ul":
+            self.lists.append(["ul", 0])
+        if tag == "li":
+            if self.lists and self.lists[-1][0] == "ol":
+                val = (a.get("value") or "").strip()
+                self.lists[-1][1] = int(val) if val.isdigit() else self.lists[-1][1] + 1
+                indent = 20 * sum(1 for l in self.lists[:-1] if l[0] == "ol")
+                self._flush_num()
+                self.out.append(f'<div style="color:{BLACK};margin:8px 0 8px {indent}px;">')
+                self.num = f"{self.lists[-1][1]}. "
+                self.open.append("div")
+                self.items.append("ol")
+                return
+            self.items.append("ul")
         keep = []
         if tag == "img":
             if not self.images:
@@ -130,6 +160,8 @@ class _Clean(HTMLParser):
             keep.append(("style", TAG_STYLE[tag]))
         attr = "".join(f' {k}="{escape(v, quote=True)}"' for k, v in keep)
         self.out.append(f"<{tag}{attr}>")
+        if tag in ("strong", "b"):
+            self._flush_num()
         if tag not in VOID:
             self.open.append(tag)
 
@@ -140,6 +172,22 @@ class _Clean(HTMLParser):
         if self.skip:
             return
         tag = "h2" if tag == "h1" else tag
+        if tag == "li" and self.num and self.items and self.items[-1] == "ol" and self.open and self.open[-1] == "div":
+            self.items.pop()                             # mục đánh số rỗng → bỏ hẳn
+            self.open.pop()
+            self.out.pop()
+            self.num = ""
+            return
+        self._flush_num()
+        if tag == "ol":
+            if self.lists and self.lists[-1][0] == "ol":
+                self.lists.pop()
+            return
+        if tag == "ul" and self.lists and self.lists[-1][0] == "ul":
+            self.lists.pop()
+        if tag == "li" and self.items:
+            if self.items.pop() == "ol":
+                tag = "div"                              # mục đánh số đã xuất dưới dạng <div>
         if tag in ALLOWED and tag not in VOID and tag in self.open:
             while self.open:                               # đóng các thẻ còn mở bên trong
                 t = self.open.pop()
@@ -149,6 +197,9 @@ class _Clean(HTMLParser):
 
     def handle_data(self, data):
         if not self.skip:
+            if self.num and not data.strip():
+                return
+            self._flush_num()
             self.out.append(escape(data, quote=False))
 
     def result(self):

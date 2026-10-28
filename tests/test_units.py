@@ -82,6 +82,13 @@ eq(html2.count("<img"), 1, "hàng ảnh: chỉ cột có ảnh")
 eq("<strong>48-22-8450</strong>" in html2, True, "tô đậm cột của mã đang đăng")
 eq('colspan="3"' in html2, True, "dòng tiêu đề nhóm trải hết bảng")
 
+print("=== Mô tả gốc: giữ đúng số thứ tự ===")
+from dt_importer.content import clean_description  # noqa: E402
+cd = clean_description('<ol><li><b>A</b></li></ol><p>x</p><ol start="2"><li><b>B</b></li></ol><ul><li>u</li></ul>'
+                       '<ol start="3"><li>C</li><li>D</li></ol>')
+eq([t for t in ("<b>1. A</b>", "<b>2. B</b>", "3. C", "4. D") if t not in cd], [], "ol start=2,3 → số ghi thành chữ đúng thứ tự")
+eq("<ol" in cd or "<ul><li" not in cd.replace(' style="color:#000;"', ""), False, "không còn <ol>, giữ nguyên danh sách chấm <ul>")
+
 print("=== Nhận diện trang sản phẩm ===")
 P = lambda **f: {"name": f.pop("name", "SP"), "sku": f.pop("sku", ""), "found": f}
 eq(Scraper.is_product(P(price=True, sku="", features=True)), True, "có giá + đặc điểm")

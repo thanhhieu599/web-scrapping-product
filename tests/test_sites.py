@@ -179,9 +179,12 @@ try:
     check(e.get("price", "") in ("", "0"), f"sản phẩm LIÊN HỆ: không điền giá ({e.get('price')!r})")
     check(len(e.get("files", [])) == 2, f"lấy đủ 2 ảnh gallery (kể cả ảnh tải chậm) ({e.get('files')})")
     ec = e.get("content", "")
-    check("1. MÔ TẢ SẢN PHẨM" in ec and "giải pháp tuyệt vời" in ec and "2. THÔNG SỐ KỸ THUẬT" in ec
+    check("MÔ TẢ SẢN PHẨM" in ec and "giải pháp tuyệt vời" in ec and "THÔNG SỐ KỸ THUẬT" in ec
           and "Màu mực: Xanh dương" in ec and "Quy cách: Thiết kế hiện đại" in ec, "lấy TOÀN BỘ phần Mô tả")
     check("<img" not in ec, "mô tả KHÔNG lấy hình ảnh")
+    check("<strong>1. MÔ TẢ SẢN PHẨM</strong>" in ec and "<strong>2. THÔNG SỐ KỸ THUẬT</strong>" in ec
+          and "<strong>3. ĐẶC ĐIỂM SẢN PHẨM</strong>" in ec and "<ol" not in ec,
+          "đánh số 1, 2, 3 giữ đúng như web gốc (không bị Sapo đánh lại thành 1, 1, 1)")
     check("Thông số kỹ thuật</h2>" not in ec and "Nét bút mượt mà" not in ec, "không chèn thêm bảng / mô tả ngắn")
     check(e.get("variants") == [] or not e.get("variants"), "SP 1 màu: không tạo thuộc tính")
     g = next((x for x in saved if x.get("sku") == "EG057"), {})
