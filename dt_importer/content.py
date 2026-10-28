@@ -94,9 +94,9 @@ TAG_STYLE = {"h2": H2, "h3": f"font-size:17px;font-weight:700;color:{BLACK};marg
 
 
 class _Clean(HTMLParser):
-    def __init__(self, base):
+    def __init__(self, base, images=True):
         super().__init__(convert_charrefs=True)
-        self.base, self.out, self.skip, self.open = base, [], 0, []
+        self.base, self.out, self.skip, self.open, self.images = base, [], 0, [], images
 
     def handle_starttag(self, tag, attrs):
         if tag in DROP_WITH_CONTENT:
@@ -111,6 +111,8 @@ class _Clean(HTMLParser):
         a = dict(attrs)
         keep = []
         if tag == "img":
+            if not self.images:
+                return
             src = a.get("data-src") or a.get("data-lazy-src") or a.get("src") or ""
             if not src or src.startswith("data:"):
                 return
@@ -155,31 +157,36 @@ class _Clean(HTMLParser):
         return "".join(self.out)
 
 
-def clean_description(html, base_url=""):
+def clean_description(html, base_url="", images=True):
     """Mô tả gốc → HTML an toàn: chỉ giữ thẻ định dạng cơ bản, bỏ script/style/sự kiện, ảnh link tuyệt đối, chữ đen."""
     if not html:
         return ""
-    p = _Clean(base_url)
+    p = _Clean(base_url, images)
     p.feed(html)
     p.close()
     out = p.result().strip()
     import re
-    out = re.sub(r"<(p|div|span|li|h[234])[^>]*>\s*</\1>", "", out)        # bỏ khối rỗng
+    for _ in range(3):                                                       # bỏ khối rỗng (kể cả lồng nhau)
+        out = re.sub(r"<(p|div|span|li|h[234]|figure|figcaption|strong|b|em|i|u)\b[^>]*>(\s|<br>)*</\1>", "", out)
     return out
 
 
-def _description_html(data):
-    desc = clean_description(data.get("description_html"), data.get("url") or "")
+def _description_html(data, images=True):
+    desc = clean_description(data.get("description_html"), data.get("url") or "", images)
     if not desc:
         return ""
     return f'<div style="color:{BLACK};line-height:1.7;">{desc}</div>'
 
 
-def build_content_html(data, mode="features_specs"):
-    """mode: "features_specs" = Đặc điểm + Thông số (mặc định);
-             "description"   = mô tả gốc của web (làm sạch) + bảng thông số/thuộc tính."""
-    if mode == "description" and data.get("description_html"):
-        parts = [_description_html(data), _spec_html(data.get("spec"), data.get("sku"))]
+def build_content_html(data, mode="features_specs", images=True):
+    """mode: "features_specs"   = Đặc điểm + Thông số (mặc định);
+             "description"      = mô tả gốc của web (làm sạch) + bảng thông số/thuộc tính;
+             "description_only" = chỉ mô tả gốc của web (làm sạch).
+    images=False: bỏ hết ảnh trong mô tả gốc."""
+    if mode in ("description", "description_only") and data.get("description_html"):
+        parts = [_description_html(data, images)]
+        if mode == "description":
+            parts.append(_spec_html(data.get("spec"), data.get("sku")))
         html = "".join(p for p in parts if p)
         if html:
             return html

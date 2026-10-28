@@ -175,15 +175,26 @@ output/
 | Bộ đọc theo nền tảng | Đọc đúng tên, mã, giá, ảnh gốc, mô tả, phiên bản của từng nền tảng web | `dt_importer/sites/` (`magento.py`, `woocommerce.py`, `base.py`) |
 | Bộ đọc chung | Web chưa biết nền tảng: dò theo chữ "Quy cách", "Đặc điểm", "Thông số" | `dt_importer/scraper.py` |
 
-Đang có sẵn:
+Đang có sẵn (rút gọn):
 
 ```json
 {
   "milwaukeetool.com.vn": {"name": "Milwaukee", "platform": "magento", "vendor": "Milwaukee", "content": "features_specs"},
   "delivietnam.com.vn":   {"name": "Deli Việt Nam", "platform": "woocommerce", "vendor": "Deli",
-                           "product_type": "Văn phòng phẩm", "content": "description", "listing_max_pages": 60}
+                           "product_type": "Văn phòng phẩm", "name_cut": ["–", "—", " - "],
+                           "content": "description_only", "description_images": false,
+                           "variant_attribute": "Màu sắc", "listing_max_pages": 60}
 }
 ```
+
+Quy tắc Deli ở trên nghĩa là:
+- **Tên:** lấy đến trước dấu "–". Ví dụ "Bút Gel siêu trơn Deli E6600S – Công nghệ…" thành "Bút Gel siêu trơn Deli E6600S".
+- **Mã SP:** lấy ô SKU.
+- **Ảnh:** lấy toàn bộ ảnh gallery ở cỡ gốc.
+- **Nội dung:** chỉ lấy tab "Mô tả", giữ nguyên các mục 1, 2…, bỏ hết hình.
+- **Thuộc tính "Màu sắc":** tự tạo khi sản phẩm có ô chọn màu hoặc dòng chữ "Màu sắc: Đen, Xanh".
+  Mã từng phiên bản là MÃ SP-MÀU, ví dụ EG057-DEN, EG057-XANH.
+- **Sản phẩm "Liên hệ":** không điền giá.
 
 **Thêm 1 nhà cung cấp** = thêm 1 dòng theo tên miền (không cần `www.`). Các khoá đều tuỳ chọn:
 
@@ -192,20 +203,22 @@ output/
 | `name` | Tên hiện trong nhật ký |
 | `platform` | `auto` (tự nhận) · `magento` · `woocommerce` · `generic` |
 | `vendor`, `product_type` | Nhà cung cấp / Loại mặc định – dùng khi ô trên giao diện để trống |
-| `content` | `features_specs` = Đặc điểm + bảng Thông số · `description` = mô tả gốc của web (đã làm sạch: bỏ mã độc, màu chữ, iframe; chữ đen) + bảng thuộc tính · `auto` |
+| `content` | `features_specs` = Đặc điểm + bảng Thông số · `description` = mô tả gốc của web (đã làm sạch: bỏ mã độc, màu chữ, iframe; chữ đen) + bảng thuộc tính · `description_only` = chỉ mô tả gốc · `auto` |
+| `description_images` | `false` = bỏ hình trong mô tả gốc |
+| `name_cut` | Ký tự cắt tên, ví dụ `["–", " - "]`: tên lấy đến trước ký tự này |
+| `variant_attribute` | Tên thuộc tính mặc định (ví dụ `"Màu sắc"`), dùng khi ô "Tên thuộc tính" trên giao diện để trống |
 | `image_mode`, `max_images`, `listing_max_pages`, `product_link_pattern`, `image_url_strip_params` | Ghi đè `config.json` riêng cho web này |
 | `selectors` | CSS selector riêng khi web đặc biệt: `name`, `sku`, `price`, `gallery`, `description`, `variant_images`, `features`, `specs` |
 
 Web **chưa có** trong `sites.json` vẫn chạy: ứng dụng tự nhận Magento / WooCommerce, còn lại dùng bộ đọc chung.
 
 **Ví dụ – tải cả nhóm Văn phòng phẩm của Deli:** dán `https://delivietnam.com.vn/danh-muc-san-pham/van-phong-pham`
-vào ô link, để trống Nhà cung cấp/Loại (tự lấy "Deli" / "Văn phòng phẩm"), nhập "Tên thuộc tính" = `Màu sắc` nếu muốn
-tạo phiên bản, bấm Chạy. Ứng dụng tự đi hết các trang (1, 2, 3… theo nút "→"), mỗi sản phẩm lấy: tên, mã, giá
+vào ô link, để trống các ô Nhà cung cấp, Loại và Tên thuộc tính (tự lấy "Deli", "Văn phòng phẩm" và "Màu sắc"), rồi bấm Chạy. Ứng dụng tự đi hết các trang (1, 2, 3… theo nút "→"), mỗi sản phẩm lấy: tên, mã, giá
 (ưu tiên giá khuyến mãi), ảnh gốc cỡ lớn, mô tả, bảng "Thông tin bổ sung", phiên bản (giá/mã/ảnh từng màu).
 
 **Web dùng nền tảng khác** (Haravan, Shopify, Sapo, tự viết…): tạo `dt_importer/sites/<ten>.py` kế thừa `SiteAdapter`,
 ghi đè `detect()` / `enrich()` / `variants()`, rồi thêm vào `ADAPTERS` trong `dt_importer/sites/__init__.py`.
-Kiểm thử mẫu: `tests/test_sites.py` + trang giả lập `tests/mock_site/woo/`.
+Kiểm thử mẫu: `tests/test_sites.py` + trang giả lập `tests/mock_site/woo/` (WooCommerce chuẩn), `tests/mock_site/deli/` (theme Flatsome giống delivietnam.com.vn).
 
 ## 6. Cách hoạt động (để dễ bảo trì)
 

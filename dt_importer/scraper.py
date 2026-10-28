@@ -498,7 +498,8 @@ LINKS_JS = COMMON_JS + r"""
   const out = [];
   // Ưu tiên link trong THẺ SẢN PHẨM (Magento/WooCommerce/Haravan...) – chính xác hơn dò mọi link có ảnh
   const CARD_LINKS = 'a.product-item-link, a.product-item-photo, .product-item-name a, .product-item a.photo, '
-                   + 'li.product a.woocommerce-LoopProduct-link, .product-card a, .product-grid-item a, .product-item a';
+                   + 'li.product a.woocommerce-LoopProduct-link, .product-small .box-image a, .product-small .name a, '
+                   + '.product-small .product-title a, .product-card a, .product-grid-item a, .product-item a';
   if (!pat) {
     for (const a of qsa(document, CARD_LINKS)) {
       if (inChrome(a) || a.closest('.related, .upsell, .crosssell, [class*=related], [class*=upsell], .pages, .toolbar')) continue;
@@ -518,7 +519,7 @@ LINKS_JS = COMMON_JS + r"""
   }
   // Trang kế tiếp: <link rel=next> (Magento để trong <head>), a[rel=next], nút "Tiếp/›/Next" trong khối phân trang
   let next = document.querySelector('link[rel=next], a[rel=next]');
-  if (!next) next = document.querySelector('.pages a.action.next, .pages-item-next a, a.next.page-numbers, li.next a, .pagination .next a');
+  if (!next) next = document.querySelector('.pages a.action.next, .pages-item-next a, a.next.page-numbers, a.next.page-number, li.next a, .pagination .next a');
   if (!next) next = [...document.querySelectorAll('.pagination a, .pages a, [class*=paging] a, [class*=pagination] a, [class*=pager] a')]
       .find(a => /^(›|»|>|sau|next|tiếp|trang tiếp|trang sau|tiếp theo)$/i.test(norm(a.textContent))
                  || /(^|\s)next(\s|$)/i.test(a.className) || /next/i.test(a.getAttribute('aria-label') || ''));
@@ -555,6 +556,7 @@ class Scraper:
         self.sites = load_sites(cfg.get("sites_file"))
         self.profile = {"name": "web", "platform": "auto", "content": "auto"}
         self.adapter = None
+        self.variant_attr = ""          # tên thuộc tính đang tạo (vd "Màu sắc") – để bộ đọc chọn đúng thuộc tính
         # Dùng đúng User-Agent của trình duyệt, chỉ bỏ chữ "Headless" (một số web chặn bot theo chữ này)
         probe = browser.new_page()
         ua = probe.evaluate("navigator.userAgent").replace("HeadlessChrome", "Chrome")
@@ -606,6 +608,7 @@ class Scraper:
         data = self.adapter.enrich(self.page, data)
         data["platform"] = self.adapter.platform
         data["url"] = self.page.url
+        data = self.adapter.apply_rules(data)                        # quy tắc riêng của NCC trong sites.json
         return data
 
     @staticmethod

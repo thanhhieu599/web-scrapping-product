@@ -8,6 +8,10 @@ Các khoá dùng được (đều tuỳ chọn):
     vendor          Nhà cung cấp mặc định (dùng khi ô Nhà cung cấp để trống)
     product_type    Loại sản phẩm mặc định (dùng khi ô Loại để trống)
     content         "auto" | "features_specs" (Đặc điểm + Thông số) | "description" (mô tả gốc + bảng thuộc tính)
+                    | "description_only" (chỉ mô tả gốc)
+    description_images  false = bỏ ảnh trong mô tả gốc (mặc định true)
+    name_cut        ["–", " - "] = tên lấy đến trước ký tự này (bỏ phần quảng cáo phía sau)
+    variant_attribute   tên thuộc tính phiên bản mặc định (vd "Màu sắc") khi ô "Tên thuộc tính" để trống
     image_mode, product_link_pattern, listing_max_pages, image_url_strip_params   (ghi đè config.json)
     selectors       CSS selector riêng: name, sku, price, variant_images, features, specs, description, gallery
 Web chưa có trong sites.json vẫn chạy được: tự nhận nền tảng (Magento / WooCommerce / web thường).

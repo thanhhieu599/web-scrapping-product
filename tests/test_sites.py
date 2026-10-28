@@ -70,7 +70,7 @@ c = clean_description('<p style="color:red" onclick="x()">A <b>B</b></p><script>
                       '<a href="javascript:x">L</a><iframe src="y"></iframe><div><span></span></div>', "https://a.vn/p/")
 check("script" not in c and "bad()" not in c and "onclick" not in c and "onerror" not in c and "iframe" not in c,
       "bỏ script / sự kiện / iframe")
-check('src="https://a.vn/i.jpg"' in c and "color:red" not in c and "<b" in c and ">L<" in c, "ảnh link tuyệt đối, bỏ màu gốc, giữ chữ")
+check('src="https://a.vn/i.jpg"' in c and "color:red" not in c and "<b>B</b>" in c and c.endswith("L"), "ảnh link tuyệt đối, bỏ màu gốc, giữ chữ")
 
 tmp = Path(tempfile.mkdtemp())
 cfg = load_config()
@@ -129,8 +129,9 @@ try:
     rows = {r["label"]: r["values"] for r in pj["spec"]["rows"]}
     check(rows.get("Quy cách đóng gói") == ["Hộp 12 cây"], f"bảng Thông tin bổ sung → Thông số ({rows})")
     mt = json.loads((tmp / "out" / "1238" / "product.json").read_text(encoding="utf-8"))
-    mv = [(v["value"], v["price"]) for v in mt["variants"]]
-    check(mv == [("1238-DEN", 245000), ("1238-TRANG", 255000), ("1238-XANH", 265000)], f"phiên bản màu sắc {mv}")
+    mv = [(v["value"], v["sku"], v["price"]) for v in mt["variants"]]
+    check(mv == [("Đen", "1238-DEN", 245000), ("Trắng", "1238-TRANG", 255000), ("Xanh lá", "1238-XANH", 265000)],
+          f"phiên bản màu sắc (tên màu, mã, giá) {mv}")
     check(len(mt["image_files"]) == 4, f"ảnh 3 màu + ảnh chính ({len(mt['image_files'])})")
     gh = json.loads((tmp / "out" / "0012" / "product.json").read_text(encoding="utf-8"))
     check(gh["price"] is None, "sản phẩm Liên hệ: không có giá, vẫn lấy")
@@ -156,10 +157,42 @@ try:
     check("desc-q01-600x600.jpg" in c and ">Mô tả<" not in c, "giữ ảnh trong mô tả, bỏ tiêu đề 'Mô tả' thừa")
     check(b.get("short", "x") == "", "Mô tả ngắn để trống")
     m = next((x for x in saved if x.get("sku") == "1238"), {})
-    check(m.get("attr") == "Màu sắc" and [v["value"] for v in m.get("variants", [])] == ["1238-DEN", "1238-TRANG", "1238-XANH"],
+    check(m.get("attr") == "Màu sắc" and [v["value"] for v in m.get("variants", [])] == ["Đen", "Trắng", "Xanh lá"],
           f"phiên bản WooCommerce lên Sapo ({m.get('attr')}, {[v['value'] for v in m.get('variants', [])]})")
     check([v["image"] for v in m.get("variants", [])] == [0, 1, 2], f"ảnh từng màu ({[v['image'] for v in m.get('variants', [])]})")
     check(len(m.get("files", [])) == 4, f"4 ảnh lên Sapo ({len(m.get('files', []))})")
+
+    print("\n=== DELI THẬT (theme Flatsome) – dùng đúng cấu hình delivietnam.com.vn trong sites.json ===")
+    deli = dict(load_sites()["delivietnam.com.vn"], name="Deli (test)")
+    sf2 = tmp / "sites_deli.json"
+    sf2.write_text(json.dumps({"127.0.0.1": deli}, ensure_ascii=False), encoding="utf-8")
+    cfg3 = dict(cfg, sites_file=str(sf2))
+    blank = {"product_type": "", "vendor": "", "collections": [], "tags": [], "auto_save": True, "dry_run": False,
+             "force": True, "variant_attr": ""}           # để trống hết → lấy theo hồ sơ Deli
+    saved.clear()
+    logs.clear()
+    res = pipeline.run([f"{base}/deli/danh-muc-san-pham/van-phong-pham/"], blank, cfg3, log)
+    check(len(saved) == 3, f"danh mục Flatsome 2 trang → đăng đủ 3 sản phẩm ({len(saved)}; {[r['status'] for r in res]})")
+    e = next((x for x in saved if x.get("sku") == "E6600S"), {})
+    check(e.get("name") == "Bút Gel siêu trơn Deli E6600S", f"tên cắt tại dấu '–' ({e.get('name')!r})")
+    check(e.get("vendor") == "Deli" and e.get("type") == "Văn phòng phẩm", "NCC Deli, Loại Văn phòng phẩm")
+    check(e.get("price", "") in ("", "0"), f"sản phẩm LIÊN HỆ: không điền giá ({e.get('price')!r})")
+    check(len(e.get("files", [])) == 2, f"lấy đủ 2 ảnh gallery (kể cả ảnh tải chậm) ({e.get('files')})")
+    ec = e.get("content", "")
+    check("1. MÔ TẢ SẢN PHẨM" in ec and "giải pháp tuyệt vời" in ec and "2. THÔNG SỐ KỸ THUẬT" in ec
+          and "Màu mực: Xanh dương" in ec and "Quy cách: Thiết kế hiện đại" in ec, "lấy TOÀN BỘ phần Mô tả")
+    check("<img" not in ec, "mô tả KHÔNG lấy hình ảnh")
+    check("Thông số kỹ thuật</h2>" not in ec and "Nét bút mượt mà" not in ec, "không chèn thêm bảng / mô tả ngắn")
+    check(e.get("variants") == [] or not e.get("variants"), "SP 1 màu: không tạo thuộc tính")
+    g = next((x for x in saved if x.get("sku") == "EG057"), {})
+    check(g.get("name") == "Bút gel bấm siêu trơn Deli EG575", f"EG575: tên ({g.get('name')!r})")
+    check(g.get("attr") == "Màu sắc", f"EG575: thuộc tính 'Màu sắc' tự lấy theo hồ sơ ({g.get('attr')!r})")
+    gv = [(v["value"], v["sku"]) for v in g.get("variants", [])]
+    check(gv == [("Đen", "EG057-DEN"), ("Xanh", "EG057-XANH")], f"EG575: phiên bản Đen, Xanh từ ô màu ({gv})")
+    check(len(g.get("files", [])) == 3, f"EG575: 3 ảnh gallery ({len(g.get('files', []))})")
+    b1 = next((x for x in saved if x.get("sku") == "S01"), {})
+    bv = [v["value"] for v in b1.get("variants", [])]
+    check(bv == ["Đỏ", "Xanh", "Đen"], f"chỉ có dòng chữ 'Màu sắc: Đỏ, Xanh, Đen' → vẫn tạo thuộc tính ({bv})")
 finally:
     srv.shutdown()
     shutil.rmtree(tmp, ignore_errors=True)

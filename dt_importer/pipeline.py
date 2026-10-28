@@ -76,7 +76,8 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                     data = cache.get(url) or scraper.scrape_url(url)
                     # ô để trống → dùng giá trị mặc định của nhà cung cấp trong sites.json
                     popts = dict(opts, vendor=opts.get("vendor") or prof.get("vendor") or "",
-                                 product_type=opts.get("product_type") or prof.get("product_type") or "")
+                                 product_type=opts.get("product_type") or prof.get("product_type") or "",
+                                 variant_attr=opts.get("variant_attr") or prof.get("variant_attribute") or "")
                     icfg = scraper.cfg
                     if not Scraper.is_product(data):
                         log("  – Bỏ qua: không phải trang sản phẩm")
@@ -96,7 +97,8 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
 
                     # Phiên bản (các ô dưới QUY CÁCH) – chỉ đọc khi có nhập "Tên thuộc tính"
                     variants = []
-                    if opts.get("variant_attr"):
+                    if popts.get("variant_attr"):
+                        scraper.variant_attr = popts["variant_attr"]
                         if scraper.page.url.split("#")[0] != url.split("#")[0]:
                             data = scraper.scrape_url(url)
                         variants = scraper.scrape_variants(url, data)
@@ -138,7 +140,7 @@ def run(urls, opts, cfg, log=print, wait_user=None, stop_flag=None):
                     data["spec"]["images"] = [upgrade_image_url(u, strip) if u else "" for u in data["spec"].get("images", [])]
                     data["feature_images"] = [upgrade_image_url(u, strip) for u in data.get("feature_images", [])]
                     mode = adapter.content_mode(data) if adapter else "features_specs"
-                    html = build_content_html(data, mode)
+                    html = build_content_html(data, mode, images=prof.get("description_images", True))
                     weight = weight_grams(data) if cfg.get("fill_weight", True) else None
                     title = name_with_vendor(data["name"], popts.get("vendor")) if opts.get("vendor_in_name", True) else data["name"]
                     payload = {"debug_dir": str(folder), "name": title, "sku": sku, "price": data.get("price"),

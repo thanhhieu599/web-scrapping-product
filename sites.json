@@ -11,7 +11,14 @@
     "platform": "woocommerce",
     "vendor": "Deli",
     "product_type": "Văn phòng phẩm",
-    "content": "description",
+    "name_cut": [
+      "–",
+      "—",
+      " - "
+    ],
+    "content": "description_only",
+    "description_images": false,
+    "variant_attribute": "Màu sắc",
     "listing_max_pages": 60
   }
 }
